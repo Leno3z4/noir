@@ -312,7 +312,7 @@ function update(dt){
   cleanup();
 
   el.height.textContent=String(Math.max(0,state.score));
-  el.speed.textContent=mult.toFixed(2)+'x';
+  el.jumps.textContent=String(state.jumps);
 
   if(player.y>state.cameraY+H+70)endRun();
 }
