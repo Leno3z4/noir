@@ -137,11 +137,14 @@ function addObstacle(platform){
   platform.obstacle={
     type:'ghost',
     x:center,
-    baseX:center,
+    minX,
+    maxX,
     y:platform.y-23,
-    amplitude:Math.max(12,Math.min(28,(maxX-minX)*.42)),
-    speed:rand(.9,1.35),
-    phase:rand(0,Math.PI*2),
+    direction:rand(0,1)<.5?-1:1,
+    state:'moving',
+    pauseUntil:state.time,
+    lastUpdate:state.time,
+    speed:rand(46,58),
     radius:10
   };
   return true;
@@ -173,13 +176,35 @@ function updateObstacles(){
     if(!o)continue;
 
     if(o.type==='ghost'){
-      const minX=p.x+TILE;
-      const maxX=p.x+p.w-TILE;
-      o.x=Math.max(
-        minX,
-        Math.min(maxX,o.baseX+Math.sin(state.time*o.speed+o.phase)*o.amplitude)
-      );
+      const dt=Math.max(0,state.time-(o.lastUpdate??state.time));
+      const minX=p.x+TILE*1.35;
+      const maxX=Math.max(minX,p.x+p.w-TILE*1.35);
+
+      o.minX=minX;
+      o.maxX=maxX;
+
+      // Patrol from one safe edge of the tile to the other.
+      // At each edge the ghost pauses for exactly two seconds.
+      if(o.state==='paused'){
+        if(state.time>=o.pauseUntil){
+          o.state='moving';
+          o.direction*=-1;
+        }
+      }else{
+        o.x+=o.direction*o.speed*dt;
+        if(o.x<=o.minX){
+          o.x=o.minX;
+          o.state='paused';
+          o.pauseUntil=state.time+2;
+        }else if(o.x>=o.maxX){
+          o.x=o.maxX;
+          o.state='paused';
+          o.pauseUntil=state.time+2;
+        }
+      }
+
       o.y=p.y-23;
+      o.lastUpdate=state.time;
     }
   }
 }
@@ -527,100 +552,115 @@ function mascot(){
   const sy=Math.round(player.y-state.cameraY);
   const bounce=Math.sin(state.time*12);
   const rising=player.vy<0;
-  const scale=2;
 
   ctx.save();
   ctx.translate(sx,Math.round(sy+bounce*.8));
-  ctx.scale(rising?.96:1.04,rising?1.04:.96);
+  ctx.scale(rising?.97:1.04,rising?1.04:.96);
 
-  // Pixel helmet silhouette inspired by Dlicom's blue astronaut/chat mascot.
+  // Dlicom's canonical mascot cues: a glossy spherical glass helmet,
+  // rounded blue chat-bubble face, light-blue suit/collar, and D emblem.
   const helmet=[
-    '0000011111100000',
-    '0001111111111000',
-    '0011111111111100',
-    '0111111111111110',
-    '0111111111111110',
-    '1111111111111111',
-    '1111111111111111',
-    '1111111111111111',
-    '1111111111111111',
-    '1111111111111111',
-    '0111111111111110',
-    '0111111111111110',
-    '0011111111111100',
-    '0001111111111000',
-    '0000011111100000',
-    '0000000000000000'
+    '00000001111110000000',
+    '00000011111111000000',
+    '00000111111111100000',
+    '00001111111111110000',
+    '00011111111111111000',
+    '00111111111111111100',
+    '01111111111111111110',
+    '01111111111111111110',
+    '11111111111111111111',
+    '11111111111111111111',
+    '01111111111111111110',
+    '01111111111111111110',
+    '00111111111111111100',
+    '00011111111111111000',
+    '00001111111111110000',
+    '00000111111111100000',
+    '00000011111111000000',
+    '00000001111110000000'
   ];
-  drawSprite(helmet,-16,-16,2,'#15345f');
+  drawSprite(helmet,-20,-18,2,'#0b3f83');
 
+  // Bright cyan glass edge gives the head the translucent globe feel seen in Dlicom art.
   const rim=[
-    '0000001111000000',
-    '0000111111110000',
-    '0001111111111100',
-    '0011111111111110',
-    '0011111111111110',
-    '0111111111111111',
-    '0111111111111111',
-    '0111111111111111',
-    '0111111111111111',
-    '0011111111111110',
-    '0011111111111110',
-    '0001111111111100',
-    '0000111111110000'
+    '00000000111100000000',
+    '00000011111111000000',
+    '00000111111111100000',
+    '00001111111111110000',
+    '00011111111111111000',
+    '00111111111111111100',
+    '00111111111111111100',
+    '01111111111111111110',
+    '01111111111111111110',
+    '00111111111111111100',
+    '00111111111111111100',
+    '00011111111111111000',
+    '00001111111111110000',
+    '00000111111111100000',
+    '00000011111111000000'
   ];
-  drawSprite(rim,-16,-13,2,'#3da9f5');
+  drawSprite(rim,-20,-16,2,'#48c9ff');
 
-  // Glass highlight.
-  ctx.fillStyle='#8fe9ff';
-  ctx.globalAlpha=.85;
-  ctx.fillRect(-8,-24,12,2);
-  ctx.fillRect(-12,-21,4,2);
+  // Glass reflections.
+  ctx.fillStyle='#d4f9ff';
+  ctx.globalAlpha=.9;
+  ctx.fillRect(-10,-29,11,2);
+  ctx.fillRect(-15,-26,4,2);
+  ctx.fillRect(11,-19,3,2);
   ctx.globalAlpha=1;
 
-  // Chat-bubble face with the little tail at bottom-left.
+  // The signature Dlicom chat-bubble face.
   const face=[
-    '00011111111000',
-    '01111111111110',
-    '11111111111111',
-    '11111111111111',
-    '11111111111111',
-    '11111111111111',
-    '01111111111110',
-    '00111111111100',
-    '00001111000000'
+    '0000111111110000',
+    '0011111111111100',
+    '0111111111111110',
+    '1111111111111111',
+    '1111111111111111',
+    '1111111111111111',
+    '1111111111111111',
+    '0111111111111110',
+    '0011111111111100',
+    '0000111111000000',
+    '0000011100000000'
   ];
-  drawSprite(face,-14,-10,2,'#70b9ff');
+  drawSprite(face,-16,-10,2,'#729ff5');
 
-  // Friendly eyes / expression.
-  ctx.fillStyle='#f2fbff';
-  ctx.fillRect(-8,-4,4,4);
-  ctx.fillRect(4,-4,4,4);
-  ctx.fillStyle='#07111b';
-  ctx.fillRect(-7,-3,3,3);
-  ctx.fillRect(4,-3,3,3);
-  ctx.fillRect(-2,3,4,2);
+  // Friendly white eyes with dark blue pupils.
+  ctx.fillStyle='#f7fbff';
+  ctx.fillRect(-10,-4,5,5);
+  ctx.fillRect(5,-4,5,5);
+  ctx.fillStyle='#14284f';
+  ctx.fillRect(-9,-3,3,3);
+  ctx.fillRect(6,-3,3,3);
+
+  // Small curved smile.
+  ctx.fillRect(-3,3,6,2);
   ctx.fillRect(-1,5,2,1);
 
-  // Tiny D mark on the helmet to make the character read as Dlicom at gameplay scale.
-  ctx.fillStyle='#c7f4ff';
-  ctx.fillRect(-3,-22,6,2);
-  ctx.fillRect(-3,-20,2,4);
-  ctx.fillRect(1,-20,2,3);
-  ctx.fillRect(-1,-18,3,2);
+  // Tiny D emblem above the face + collar cue from the canonical body design.
+  ctx.fillStyle='#d5f9ff';
+  ctx.fillRect(-3,-24,6,2);
+  ctx.fillRect(-3,-22,2,4);
+  ctx.fillRect(1,-22,2,3);
+  ctx.fillRect(-1,-19,3,2);
+
+  ctx.fillStyle='#86dcff';
+  ctx.fillRect(-8,18,16,4);
+  ctx.fillStyle='#d5f9ff';
+  ctx.fillRect(-3,18,6,2);
 
   if(!movingHorizontal()){
     ctx.fillStyle='#5ff0ff';
-    ctx.fillRect(-7,20,3,3);
-    ctx.fillRect(5,21,2,2);
+    ctx.fillRect(-8,25,3,3);
+    ctx.fillRect(5,26,2,2);
   }
 
   ctx.restore();
 
   if(state.flash){
-    ctx.globalAlpha=Math.min(.5,state.flash);
+    ctx.globalAlpha=Math.min(.45,state.flash);
     ctx.fillStyle='#dff9ff';
-    ctx.fillRect(sx-18,sy-18,36,36);
+    ctx.fillRect(sx-20,sy-20,40,40);
     ctx.globalAlpha=1;
   }
 }
