@@ -2,7 +2,7 @@ const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 const W=canvas.width,H=canvas.height,GRAVITY=1450,JUMP=-560,R=13,TILE=30,ROW_GAP=104;
 const el={menu:document.querySelector('#menu'),over:document.querySelector('#game-over'),start:document.querySelector('#start'),restart:document.querySelector('#restart'),height:document.querySelector('#height'),best:document.querySelector('#best'),speed:document.querySelector('#speed'),final:document.querySelector('#final-height'),newBest:document.querySelector('#new-best'),seed:document.querySelector('#seed')};
-const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0,currentPlatformId:0};
+const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0,currentPlatformId:0,jumps:0};
 const input={left:false,right:false},platforms=[];
 const player={x:W/2,y:520,vx:0,vy:0,lastY:520};
 el.best.textContent=String(state.best);
@@ -31,9 +31,10 @@ function addAbove(prev,n){
     baseX:x,phase:rand(0,Math.PI*2),
     amplitude:moving?Math.min(TILE*1.5,8+difficulty()*8):0,
     speed:moving?rand(.7,1.05):0,tiles,side,
-    active:true,departedAt:null
+    active:true,departedAt:null,fadeDuration:null,obstacle:null
   };
   platforms.push(p);
+  rollObstacle(p);
   return p;
 }
 function reset(seed=Math.floor(Math.random()*2**31)){
@@ -46,6 +47,7 @@ function reset(seed=Math.floor(Math.random()*2**31)){
   state.seed=seed;
   state.rng=rng(seed);
   state.currentPlatformId=0;
+  state.jumps=0;
 
   platforms.length=0;
 
@@ -86,6 +88,115 @@ function cleanup(){
     if(p.id===state.currentPlatformId)continue;
     if(p.y>cut)platforms.splice(i,1);
   }
+}
+function graceDuration(){
+  return state.jumps>=50?5:3;
+}
+function startDeparture(platform){
+  if(!platform||platform.departedAt!==null)return;
+  platform.departedAt=state.time;
+  platform.fadeDuration=graceDuration();
+}
+function obstacleChance(){
+  if(state.jumps<50)return 0;
+  return Math.min(.38,.18+(state.jumps-50)*.002);
+}
+function canHostObstacle(platform){
+  return Boolean(
+    platform &&
+    platform.active &&
+    !platform.starter &&
+    !platform.obstacle &&
+    platform.w>=TILE*4 &&
+    platform.id>=state.currentPlatformId+2
+  );
+}
+function addObstacle(platform){
+  if(!canHostObstacle(platform))return false;
+
+  const type=rand(0,1)<.55?'spike':'ghost';
+  const padding=TILE;
+
+  if(type==='spike'){
+    const minX=platform.x+padding;
+    const maxX=platform.x+platform.w-padding;
+    platform.obstacle={
+      type:'spike',
+      x:rand(minX,maxX),
+      y:platform.y-13,
+      w:18,
+      h:16
+    };
+    return true;
+  }
+
+  const minX=platform.x+padding;
+  const maxX=platform.x+platform.w-padding;
+  const center=rand(minX,maxX);
+
+  platform.obstacle={
+    type:'ghost',
+    x:center,
+    baseX:center,
+    y:platform.y-23,
+    amplitude:Math.max(12,Math.min(28,(maxX-minX)*.42)),
+    speed:rand(.9,1.35),
+    phase:rand(0,Math.PI*2),
+    radius:10
+  };
+  return true;
+}
+function rollObstacle(platform){
+  if(state.jumps<50||!canHostObstacle(platform))return;
+  if(rand(0,1)<obstacleChance())addObstacle(platform);
+}
+function seedUpcomingObstacles(){
+  const future=platforms.filter(p=>canHostObstacle(p));
+  const picks=[];
+  const attempts=Math.min(4,future.length);
+
+  for(let i=0;i<attempts;i++){
+    if(rand(0,1)<.55){
+      const candidate=future[Math.floor(rand(0,future.length))];
+      if(candidate&&!picks.includes(candidate)&&addObstacle(candidate)){
+        picks.push(candidate);
+      }
+    }
+  }
+}
+function updateObstacles(){
+  for(const p of platforms){
+    const o=p.obstacle;
+    if(!o)continue;
+
+    if(o.type==='ghost'){
+      const minX=p.x+TILE;
+      const maxX=p.x+p.w-TILE;
+      o.x=Math.max(
+        minX,
+        Math.min(maxX,o.baseX+Math.sin(state.time*o.speed+o.phase)*o.amplitude)
+      );
+      o.y=p.y-23;
+    }
+  }
+}
+function obstacleHit(){
+  for(const p of platforms){
+    const o=p.obstacle;
+    if(!o)continue;
+
+    if(o.type==='spike'){
+      const hitX=player.x+R>o.x-o.w*.5&&player.x-R<o.x+o.w*.5;
+      const hitY=player.y+R>o.y-o.h&&player.y-R<o.y+o.h;
+      if(hitX&&hitY)return true;
+    }else{
+      const dx=player.x-o.x;
+      const dy=player.y-o.y;
+      const radius=R+o.radius;
+      if(dx*dx+dy*dy<radius*radius)return true;
+    }
+  }
+  return false;
 }
 function endRun(){
   state.running=false;const nb=state.score>state.best;
@@ -130,24 +241,31 @@ function update(dt){
     }
   }
 
-  // A tile gets a one-time three-second grace period starting when
-  // the player first bounces away from it. Returning to it never resets
-  // that original departure timestamp.
+  updateObstacles();
+
+  // A tile's fade clock starts once the player actually leaves it
+  // horizontally. Merely bouncing vertically in place does not start it.
+  const current=platforms.find(p=>p.id===state.currentPlatformId);
+  if(current){
+    const leftHorizontally=
+      player.x+R<current.x||
+      player.x-R>current.x+current.w;
+    if(leftHorizontally)startDeparture(current);
+  }
+
   for(const p of platforms){
-    if(p.departedAt!==null&&state.time-p.departedAt>=3){
+    if(
+      p.departedAt!==null&&
+      p.fadeDuration!==null&&
+      state.time-p.departedAt>=p.fadeDuration
+    ){
       p.active=false;
     }
   }
 
-  const current=platforms.find(p=>p.id===state.currentPlatformId);
-  if(current&&current.departedAt===null){
-    const leftHorizontally =
-      player.x+R<current.x ||
-      player.x-R>current.x+current.w;
-    const leftVertically = player.y+R<current.y-2;
-    if(leftHorizontally||leftVertically){
-      current.departedAt=state.time;
-    }
+  if(obstacleHit()){
+    endRun();
+    return;
   }
 
   if(player.vy>0){
@@ -167,10 +285,12 @@ function update(dt){
 
       if(different){
         const previous=platforms.find(platform=>platform.id===state.currentPlatformId);
-        if(previous&&previous.departedAt===null){
-          previous.departedAt=state.time;
-        }
+        if(previous)startDeparture(previous);
+
         state.currentPlatformId=p.id;
+        state.jumps+=1;
+
+        if(state.jumps===50)seedUpcomingObstacles();
       }
 
       state.flash=.32;
@@ -207,8 +327,11 @@ function drawPlatform(p){
   if(!p.active||y<-30||y>H+30)return;
 
   let alpha=1;
-  if(p.departedAt!==null){
-    alpha=Math.max(0,1-(state.time-p.departedAt)/3);
+  if(p.departedAt!==null&&p.fadeDuration!==null){
+    alpha=Math.max(
+      0,
+      1-(state.time-p.departedAt)/p.fadeDuration
+    );
   }
 
   ctx.globalAlpha=alpha;
@@ -228,6 +351,39 @@ function drawPlatform(p){
   }
 
   ctx.globalAlpha=1;
+}
+function drawObstacle(p){
+  const o=p.obstacle;
+  if(!o)return;
+
+  if(o.type==='spike'){
+    const x=Math.round(o.x);
+    const y=Math.round(o.y-state.cameraY);
+
+    ctx.fillStyle='#f0f0f0';
+    ctx.beginPath();
+    ctx.moveTo(x-9,y+13);
+    ctx.lineTo(x,y-3);
+    ctx.lineTo(x+9,y+13);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle='#171717';
+    ctx.fillRect(x-2,y+6,4,5);
+    return;
+  }
+
+  const x=Math.round(o.x);
+  const y=Math.round(o.y-state.cameraY);
+
+  ctx.fillStyle='#777';
+  ctx.fillRect(x-10,y-8,20,18);
+  ctx.fillRect(x-8,y+8,5,5);
+  ctx.fillRect(x+3,y+8,5,5);
+
+  ctx.fillStyle='#080808';
+  ctx.fillRect(x-6,y-2,4,4);
+  ctx.fillRect(x+2,y-2,4,4);
 }
 function mascot(){
   const sx=Math.round(player.x),sy=Math.round(player.y-state.cameraY),sq=player.vy<0?.96:1.06,w=Math.round(30*sq),h=Math.round(30/sq),x=sx-Math.floor(w/2),y=Math.round(sy-h/2+Math.sin(state.time*14)*1.5);
@@ -249,7 +405,14 @@ function mascot(){
     ctx.globalAlpha=1;
   }
 }
-function draw(){bg();for(const p of platforms)drawPlatform(p);mascot()}
+function draw(){
+  bg();
+  for(const p of platforms){
+    drawPlatform(p);
+    drawObstacle(p);
+  }
+  mascot();
+}
 function key(k,on){if(k==='ArrowLeft'||k.toLowerCase()==='a')input.left=on;if(k==='ArrowRight'||k.toLowerCase()==='d')input.right=on}
 addEventListener('keydown',e=>{key(e.key,true);if(['ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();if(e.key==='Enter'&&!state.running&&el.over.classList.contains('hidden')===false)reset()});
 addEventListener('keyup',e=>key(e.key,false));
