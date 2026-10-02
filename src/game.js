@@ -9,6 +9,7 @@ el.best.textContent=String(state.best);
 
 function rng(seed){let s=seed>>>0;return()=>{s+=0x6D2B79F5;let t=s;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
 function rand(a,b){return a+(b-a)*state.rng()}
+function axis(){return(input.right?1:0)-(input.left?1:0)}
 function difficulty(){return Math.min(1,state.score/4500)}
 function profileAt(height){
   if(height<500)return {minTiles:4,maxTiles:4,minGap:92,maxGap:98,moving:0};
