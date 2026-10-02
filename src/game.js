@@ -2,7 +2,7 @@ const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 const W=canvas.width,H=canvas.height,GRAVITY=1450,JUMP=-560,R=13,TILE=30,ROW_GAP=104;
 const el={menu:document.querySelector('#menu'),over:document.querySelector('#game-over'),start:document.querySelector('#start'),restart:document.querySelector('#restart'),height:document.querySelector('#height'),best:document.querySelector('#best'),speed:document.querySelector('#speed'),final:document.querySelector('#final-height'),newBest:document.querySelector('#new-best'),seed:document.querySelector('#seed')};
-const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0,launchTimer:0,currentPlatformId:0};
+const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0,currentPlatformId:0};
 const input={left:false,right:false},platforms=[];
 const player={x:W/2,y:520,vx:0,vy:0,lastY:520};
 el.best.textContent=String(state.best);
@@ -24,40 +24,46 @@ function addAbove(prev,n){
   const w=tiles*TILE;
   const side=row%2===1?'right':'left';
   const x=side==='left'?0:W-w;
-  const moving=state.score>900 && row%5===0;
+  const moving=state.score>900&&row%5===0;
   const p={
-    x,y:prev.y-ROW_GAP,w,h:12,type:moving?'moving':'static',
-    seed:n,baseX:x,phase:rand(0,Math.PI*2),
+    id:prev.id+1,x,y:prev.y-ROW_GAP,w,h:12,type:moving?'moving':'static',
+    baseX:x,phase:rand(0,Math.PI*2),
     amplitude:moving?Math.min(TILE*1.5,8+difficulty()*8):0,
-    speed:moving?rand(.7,1.05):0,tiles,side
-  };
-  platforms.push(p);return p;
-}
-function reset(seed=Math.floor(Math.random()*2**31)){
-  state.running=true;state.time=0;state.cameraY=0;state.score=0;state.charge=0;
-  state.flash=0;state.seed=seed;state.rng=rng(seed);state.launchTimer=.7;state.currentPlatformId=0;
-
-  player.x=0;
-  player.y=580-R;
-  player.vx=0;
-  player.vy=0;
-  player.lastY=player.y;
-  platforms.length=0;
-
-  // Wide starter and opening route. The player begins on the left block,
-  // then alternates between the left and right sides.
-  const tiles=6;
-  const width=tiles*TILE;
-  let p={
-    x:0,y:580,w:width,h:12,type:'static',seed:0,tiles,
-    side:'left',active:true,starter:true,baseX:0,phase:0,amplitude:0,speed:0
+    speed:moving?rand(.7,1.05):0,tiles,side,
+    active:true,fadeStartedAt:null
   };
   platforms.push(p);
+  return p;
+}
+function reset(seed=Math.floor(Math.random()*2**31)){
+  state.running=true;
+  state.time=0;
+  state.cameraY=0;
+  state.score=0;
+  state.charge=0;
+  state.flash=0;
+  state.seed=seed;
+  state.rng=rng(seed);
+  state.currentPlatformId=0;
 
-  player.x=p.x+p.w*.5;
-  player.y=p.y-R;
+  platforms.length=0;
+
+  const tiles=6;
+  const width=tiles*TILE;
+  const starter={
+    id:0,x:0,y:580,w:width,h:12,type:'static',tiles,side:'left',
+    active:true,starter:true,baseX:0,phase:0,amplitude:0,speed:0,
+    fadeStartedAt:null
+  };
+  platforms.push(starter);
+
+  player.x=starter.x+starter.w*.5;
+  player.y=starter.y-R;
+  player.vx=0;
+  player.vy=JUMP;
   player.lastY=player.y;
 
+  let p=starter;
   for(let i=1;i<=16;i++)p=addAbove(p,i);
 
   el.menu.classList.add('hidden');
@@ -65,9 +71,6 @@ function reset(seed=Math.floor(Math.random()*2**31)){
   el.height.textContent='0';
   el.speed.textContent='1.00x';
 }
-function ensure(){while(Math.min(...platforms.map(p=>p.y))>state.cameraY-900){const top=platforms.reduce((a,b)=>a.y<b.y?a:b);addAbove(top,top.seed+1);if(platforms.length>90)break}}
-function cleanup(){const cut=state.cameraY+H+120;for(let i=platforms.length-1;i>=0;i--)if(platforms[i].y>cut)platforms.splice(i,1)}
-function axis(){return(input.right?1:0)-(input.left?1:0)}
 function endRun(){
   state.running=false;const nb=state.score>state.best;
   if(nb){state.best=state.score;localStorage.setItem('dlicom-best',String(state.best))}
@@ -75,45 +78,92 @@ function endRun(){
 }
 function update(dt){
   if(!state.running)return;
+
   state.time+=dt;
   state.flash=Math.max(0,state.flash-dt*3.5);
 
-  if(state.launchTimer>0){
-    state.launchTimer=Math.max(0,state.launchTimer-dt);
-    if(state.launchTimer===0){
-      const starter=platforms[0];
-      if(starter)starter.active=false;
-      player.vy=JUMP;
-    }
-    return;
+  const a=axis();
+  const moving=a!==0;
+  const same=a===0||Math.sign(player.vx||a)===a;
+
+  if(moving&&same)state.charge=Math.min(4,state.charge+dt);
+  else state.charge=Math.max(0,state.charge-dt*1.8);
+
+  const mult=1+Math.min(.55,state.charge/7.25);
+  const maxSpeed=190*mult;
+
+  if(a)player.vx+=a*930*dt;
+  else{
+    const drag=Math.min(Math.abs(player.vx),1350*dt);
+    player.vx-=Math.sign(player.vx)*drag;
   }
 
-  const a=axis(),moving=a!==0,same=a===0||Math.sign(player.vx||a)===a;
-  if(moving&&same)state.charge=Math.min(4,state.charge+dt);else state.charge=Math.max(0,state.charge-dt*1.8);
-  const mult=1+Math.min(.55,state.charge/7.25),maxSpeed=190*mult;
-  if(a)player.vx+=a*930*dt;else{const drag=Math.min(Math.abs(player.vx),1350*dt);player.vx-=Math.sign(player.vx)*drag}
-  player.vx=Math.max(-maxSpeed,Math.min(maxSpeed,player.vx));player.lastY=player.y;player.vy+=GRAVITY*dt;player.x+=player.vx*dt;player.y+=player.vy*dt;
-  if(player.x<-R)player.x=W+R;if(player.x>W+R)player.x=-R;
-  for(const p of platforms)if(p.type==='moving')p.x=p.baseX+Math.sin(state.time*p.speed+p.phase)*p.amplitude;
-  if(player.vy>0)for(const p of platforms){
-    if(!p.active||p.seed!==state.currentPlatformId+1)continue;
-    const above=player.lastY+R<=p.y+2;
-    const cross=player.y+R>=p.y;
-    const inside=player.x+R*.72>=p.x&&player.x-R*.72<=p.x+p.w;
-    if(above&&cross&&inside){
+  player.vx=Math.max(-maxSpeed,Math.min(maxSpeed,player.vx));
+  player.lastY=player.y;
+  player.vy+=GRAVITY*dt;
+  player.x+=player.vx*dt;
+  player.y+=player.vy*dt;
+
+  if(player.x<-R)player.x=W+R;
+  if(player.x>W+R)player.x=-R;
+
+  for(const p of platforms){
+    if(p.type==='moving'&&p.active){
+      p.x=p.baseX+Math.sin(state.time*p.speed+p.phase)*p.amplitude;
+      p.x=Math.max(0,Math.min(W-p.w,p.x));
+    }
+  }
+
+  // Previous platforms remain as safety nets for exactly two seconds.
+  for(const p of platforms){
+    if(p.fadeStartedAt!==null&&state.time-p.fadeStartedAt>=2){
+      p.active=false;
+    }
+  }
+
+  if(player.vy>0){
+    for(const p of platforms){
+      if(!p.active)continue;
+
+      const above=player.lastY+R<=p.y+2;
+      const cross=player.y+R>=p.y;
+      const inside=player.x+R*.72>=p.x&&player.x-R*.72<=p.x+p.w;
+
+      if(!above||!cross||!inside)continue;
+
+      const different=p.id!==state.currentPlatformId;
+
       player.y=p.y-R;
-      player.vy=JUMP*(1+Math.min(.12,state.score/50000));
-      const previous=platforms.find(platform=>platform.seed===state.currentPlatformId);
-      if(previous)previous.active=false;
-      state.currentPlatformId=p.seed;
+      player.vy=JUMP;
+
+      if(different){
+        const previous=platforms.find(platform=>platform.id===state.currentPlatformId);
+        if(previous)previous.fadeStartedAt=state.time;
+        state.currentPlatformId=p.id;
+      }
+
       state.flash=.32;
       break;
     }
   }
-  const target=player.y-H*.34;if(target<state.cameraY)state.cameraY+=(target-state.cameraY)*Math.min(1,dt*5.5);
-  state.score=Math.max(state.score,Math.floor((520-player.y+state.cameraY)*.75));ensure();cleanup();
+
+  const target=player.y-H*.34;
+  if(target<state.cameraY){
+    state.cameraY+=(target-state.cameraY)*Math.min(1,dt*5.5);
+  }
+
+  state.score=Math.max(
+    state.score,
+    Math.floor((520-player.y+state.cameraY)*.75)
+  );
+
+  ensure();
+  cleanup();
+
+  el.height.textContent=String(Math.max(0,state.score));
+  el.speed.textContent=mult.toFixed(2)+'x';
+
   if(player.y>state.cameraY+H+70)endRun();
-  el.height.textContent=String(Math.max(0,state.score));el.speed.textContent=mult.toFixed(2)+'x';
 }
 function bg(){
   const progress=Math.min(1,state.score/3500),band=Math.floor(state.cameraY*-.12/180)%4;
@@ -122,18 +172,31 @@ function bg(){
   const shift=state.cameraY*.08%640;for(let i=0;i<28;i++){const x=i*137%W,y=(i*53-shift+H*2)%H;ctx.fillStyle=i%5===0?'#333':'#1b1b1b';ctx.fillRect(x,y,i%4===0?3:2,i%4===0?3:2)}
 }
 function drawPlatform(p){
-  const y=p.y-state.cameraY;if(y<-30||y>H+30)return;
+  const y=p.y-state.cameraY;
+  if(!p.active||y<-30||y>H+30)return;
+
+  let alpha=1;
+  if(p.fadeStartedAt!==null){
+    alpha=Math.max(0,1-(state.time-p.fadeStartedAt)/2);
+  }
+
+  ctx.globalAlpha=alpha;
+
   const platformColor=p.type==='moving'?'#b8ff36':'#f0f0f0';
   ctx.fillStyle=platformColor;
   ctx.fillRect(Math.round(p.x),Math.round(y),Math.round(p.w),10);
+
   ctx.fillStyle='#4a4a4a';
   ctx.fillRect(Math.round(p.x),Math.round(y+10),Math.round(p.w),3);
+
   ctx.fillStyle='#171717';
   for(let i=0;i<p.tiles;i++){
     const tx=p.x+i*TILE;
     ctx.fillRect(Math.round(tx+5),Math.round(y+3),4,2);
     if(TILE>=24)ctx.fillRect(Math.round(tx+TILE-5),Math.round(y+3),2,2);
   }
+
+  ctx.globalAlpha=1;
 }
 function mascot(){
   const sx=Math.round(player.x),sy=Math.round(player.y-state.cameraY),sq=player.vy<0?.96:1.06,w=Math.round(30*sq),h=Math.round(30/sq),x=sx-Math.floor(w/2),y=Math.round(sy-h/2+Math.sin(state.time*14)*1.5);
