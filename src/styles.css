@@ -18,8 +18,4 @@ button{width:100%;margin-top:14px;padding:13px 16px;border:1px solid #777;backgr
 button:hover{background:#ddd}.controls,.seed{margin-top:12px;color:#666;font-size:9px;line-height:1.5}
 #new-best{color:#b8ff36;font-weight:800;letter-spacing:.1em}
 .touch-zone{position:absolute;top:0;bottom:0;width:34%;z-index:3}@media(min-width:700px){.touch-zone{display:none}}#touch-left{left:0}#touch-right{right:0}
-
-#player{position:absolute;left:0;top:0;display:none;width:7.78%;height:4.38%;transform:translate(-50%,-50%);background:#f0f0f0;image-rendering:pixelated;pointer-events:none;z-index:2}
-#player i{position:absolute;width:17%;height:18%;top:27%;background:#080808}
-#player i:first-child{left:22%}#player i:nth-child(2){right:22%}
-#player b{position:absolute;left:28%;right:28%;height:10%;bottom:18%;background:#080808}
+\n
