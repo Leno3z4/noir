@@ -115,7 +115,7 @@ function addObstacle(platform){
   if(!canHostObstacle(platform))return false;
 
   const type=rand(0,1)<.55?'spike':'ghost';
-  const padding=TILE;
+  const padding=TILE*1.35;
 
   if(type==='spike'){
     const minX=platform.x+padding;
@@ -151,16 +151,19 @@ function rollObstacle(platform){
   if(rand(0,1)<obstacleChance())addObstacle(platform);
 }
 function seedUpcomingObstacles(){
-  const future=platforms.filter(p=>canHostObstacle(p));
-  const picks=[];
-  const attempts=Math.min(4,future.length);
+  const future=platforms
+    .filter(p=>canHostObstacle(p))
+    .sort((a,b)=>a.id-b.id);
 
-  for(let i=0;i<attempts;i++){
-    if(rand(0,1)<.55){
-      const candidate=future[Math.floor(rand(0,future.length))];
-      if(candidate&&!picks.includes(candidate)&&addObstacle(candidate)){
-        picks.push(candidate);
-      }
+  let placed=0;
+  let lastPlacedId=-99;
+
+  for(const candidate of future){
+    if(placed>=3)break;
+    if(candidate.id-lastPlacedId<2)continue;
+    if(rand(0,1)<.72&&addObstacle(candidate)){
+      placed+=1;
+      lastPlacedId=candidate.id;
     }
   }
 }
@@ -345,28 +348,52 @@ function drawBackground(){
 
   ctx.globalAlpha=1;
 
-  // Network nodes drift slowly against the scrolling world.
+  // Social graph / messaging motifs drift with the camera.
   const shift=(state.cameraY*.055)%H;
-  for(let i=0;i<24;i++){
+  for(let i=0;i<22;i++){
     const x=(i*83+17)%W;
     const y=(i*127-shift+H*2)%H;
     const connectedX=(x+30+(i%3)*30)%W;
 
-    ctx.globalAlpha=.18;
+    ctx.globalAlpha=.15;
     ctx.strokeStyle='#53c8f3';
     ctx.beginPath();
     ctx.moveTo(x,y);
     ctx.lineTo(connectedX,(y+42)%H);
     ctx.stroke();
 
-    ctx.globalAlpha=.65;
+    ctx.globalAlpha=.52;
     ctx.fillStyle=i%4===0?'#8fe9ff':'#276b96';
     ctx.fillRect(x-2,y-2,4,4);
+
+    // Tiny chat bubbles / profile markers keep the world feeling social
+    // without occupying the jump lane.
+    if(i%5===0){
+      ctx.globalAlpha=.2;
+      ctx.strokeStyle='#72d9ff';
+      ctx.strokeRect(x+8,y-8,10,7);
+      ctx.fillRect(x+10,y-1,3,2);
+    }else if(i%5===2){
+      ctx.globalAlpha=.22;
+      ctx.fillStyle='#6fb8ff';
+      ctx.fillRect(x-9,y-1,7,7);
+      ctx.fillRect(x-7,y-4,3,3);
+    }
   }
 
+  // Horizontal data rails sell the feeling of climbing through a live network.
+  const railOffset=Math.floor(state.cameraY*.18)%48;
+  ctx.globalAlpha=.11;
+  ctx.fillStyle='#1d6389';
+  for(let i=-1;i<15;i++){
+    const y=i*48-railOffset;
+    ctx.fillRect(18,y,W-36,1);
+    if(i%3===0)ctx.fillRect(18,y,48,3);
+    if(i%4===0)ctx.fillRect(W-66,y,48,3);
+  }
   ctx.globalAlpha=1;
 
-  // Deeper blue architectural bands as the run climbs.
+  // Deep architectural columns add depth while staying behind the platforms.
   const phase=Math.floor(state.score/250)%4;
   for(let i=0;i<5;i++){
     const x=((i*91)+phase*23)%W;
@@ -420,24 +447,29 @@ function drawPlatform(p){
 function drawSpikyBall(x,y){
   const px=Math.round(x),py=Math.round(y);
 
+  // 12 chunky spikes with a dark core so it reads as a ball, not a triangle.
   ctx.fillStyle='#ff6580';
+  ctx.fillRect(px-2,py-15,4,6);
+  ctx.fillRect(px-2,py+9,4,6);
+  ctx.fillRect(px-15,py-2,6,4);
+  ctx.fillRect(px+9,py-2,6,4);
+  ctx.fillRect(px-11,py-11,4,4);
+  ctx.fillRect(px+7,py-11,4,4);
+  ctx.fillRect(px-11,py+7,4,4);
+  ctx.fillRect(px+7,py+7,4,4);
 
-  // Eight chunky pixel spikes.
-  ctx.fillRect(px-2,py-14,4,5);
-  ctx.fillRect(px-2,py+9,4,5);
-  ctx.fillRect(px-14,py-2,5,4);
-  ctx.fillRect(px+9,py-2,5,4);
-  ctx.fillRect(px-10,py-10,4,4);
-  ctx.fillRect(px+6,py-10,4,4);
-  ctx.fillRect(px-10,py+6,4,4);
-  ctx.fillRect(px+6,py+6,4,4);
-
-  ctx.fillStyle='#8f2948';
+  ctx.fillStyle='#a72f50';
   ctx.fillRect(px-8,py-8,16,16);
   ctx.fillRect(px-10,py-4,20,8);
+  ctx.fillRect(px-4,py-10,8,20);
+
+  ctx.fillStyle='#5e1930';
+  ctx.fillRect(px-6,py-6,12,12);
+  ctx.fillRect(px-8,py-2,16,4);
 
   ctx.fillStyle='#ffd0da';
-  ctx.fillRect(px-4,py-5,4,4);
+  ctx.fillRect(px-5,py-5,4,4);
+  ctx.fillRect(px-3,py-1,2,2);
 }
 function drawGhostBody(x,y,alpha){
   const px=Math.round(x),py=Math.round(y);
@@ -445,19 +477,23 @@ function drawGhostBody(x,y,alpha){
   ctx.globalAlpha=alpha;
   ctx.fillStyle='#8fe9ff';
 
-  ctx.fillRect(px-7,py-10,14,16);
-  ctx.fillRect(px-10,py-6,20,10);
-  ctx.fillRect(px-7,py+6,4,6);
-  ctx.fillRect(px-2,py+6,4,8);
-  ctx.fillRect(px+3,py+6,4,6);
+  ctx.fillRect(px-8,py-10,16,15);
+  ctx.fillRect(px-10,py-6,20,11);
+  ctx.fillRect(px-7,py+5,4,6);
+  ctx.fillRect(px-2,py+5,4,9);
+  ctx.fillRect(px+4,py+5,4,6);
 
+  // Visor-like face cutout.
   ctx.fillStyle='#dff9ff';
-  ctx.fillRect(px-5,py-7,3,4);
-  ctx.fillRect(px+2,py-7,3,4);
-
+  ctx.fillRect(px-5,py-6,3,4);
+  ctx.fillRect(px+2,py-6,3,4);
   ctx.fillStyle='#12334b';
-  ctx.fillRect(px-3,py-6,2,3);
-  ctx.fillRect(px+2,py-6,2,3);
+  ctx.fillRect(px-4,py-5,2,2);
+  ctx.fillRect(px+2,py-5,2,2);
+
+  // Small signal streak.
+  ctx.fillStyle='#6fb8ff';
+  ctx.fillRect(px+8,py-8,4,2);
 
   ctx.globalAlpha=1;
 }
@@ -491,22 +527,16 @@ function mascot(){
   const sy=Math.round(player.y-state.cameraY);
   const bounce=Math.sin(state.time*12);
   const rising=player.vy<0;
-  const scale=rising?2:2;
-  const spriteW=16*scale;
-  const spriteH=16*scale;
+  const scale=2;
 
   ctx.save();
-  ctx.translate(
-    sx,
-    Math.round(sy+bounce*.8)
-  );
+  ctx.translate(sx,Math.round(sy+bounce*.8));
   ctx.scale(rising?.96:1.04,rising?1.04:.96);
 
-  // Outer helmet: stepped 16x16 silhouette inspired by Dlicom's
-  // transparent spherical helmet.
+  // Pixel helmet silhouette inspired by Dlicom's blue astronaut/chat mascot.
   const helmet=[
-    '0000111111000000',
-    '0001111111110000',
+    '0000011111100000',
+    '0001111111111000',
     '0011111111111100',
     '0111111111111110',
     '0111111111111110',
@@ -514,16 +544,15 @@ function mascot(){
     '1111111111111111',
     '1111111111111111',
     '1111111111111111',
+    '1111111111111111',
     '0111111111111110',
     '0111111111111110',
     '0011111111111100',
-    '0001111111110000',
-    '0000111111000000',
-    '0000000000000000',
+    '0001111111111000',
+    '0000011111100000',
     '0000000000000000'
   ];
-
-  drawSprite(helmet,-spriteW/2,-spriteH/2,scale,'#173d72');
+  drawSprite(helmet,-16,-16,2,'#15345f');
 
   const rim=[
     '0000001111000000',
@@ -534,14 +563,22 @@ function mascot(){
     '0111111111111111',
     '0111111111111111',
     '0111111111111111',
+    '0111111111111111',
     '0011111111111110',
     '0011111111111110',
     '0001111111111100',
     '0000111111110000'
   ];
-  drawSprite(rim,-spriteW/2,-spriteH/2+scale,scale,'#3da9f5');
+  drawSprite(rim,-16,-13,2,'#3da9f5');
 
-  // Chat-bubble face.
+  // Glass highlight.
+  ctx.fillStyle='#8fe9ff';
+  ctx.globalAlpha=.85;
+  ctx.fillRect(-8,-24,12,2);
+  ctx.fillRect(-12,-21,4,2);
+  ctx.globalAlpha=1;
+
+  // Chat-bubble face with the little tail at bottom-left.
   const face=[
     '00011111111000',
     '01111111111110',
@@ -553,24 +590,29 @@ function mascot(){
     '00111111111100',
     '00001111000000'
   ];
-  drawSprite(face,-14,-10,2,'#6fb8ff');
+  drawSprite(face,-14,-10,2,'#70b9ff');
 
-  // Eyes + smile.
+  // Friendly eyes / expression.
   ctx.fillStyle='#f2fbff';
   ctx.fillRect(-8,-4,4,4);
   ctx.fillRect(4,-4,4,4);
-
   ctx.fillStyle='#07111b';
   ctx.fillRect(-7,-3,3,3);
   ctx.fillRect(4,-3,3,3);
   ctx.fillRect(-2,3,4,2);
   ctx.fillRect(-1,5,2,1);
 
-  // Small cyan pixels under the helmet sell the bounce.
+  // Tiny D mark on the helmet to make the character read as Dlicom at gameplay scale.
+  ctx.fillStyle='#c7f4ff';
+  ctx.fillRect(-3,-22,6,2);
+  ctx.fillRect(-3,-20,2,4);
+  ctx.fillRect(1,-20,2,3);
+  ctx.fillRect(-1,-18,3,2);
+
   if(!movingHorizontal()){
     ctx.fillStyle='#5ff0ff';
-    ctx.fillRect(-7,19,3,3);
-    ctx.fillRect(5,20,2,2);
+    ctx.fillRect(-7,20,3,3);
+    ctx.fillRect(5,21,2,2);
   }
 
   ctx.restore();
