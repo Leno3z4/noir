@@ -31,7 +31,7 @@ function addAbove(prev,n){
     baseX:x,phase:rand(0,Math.PI*2),
     amplitude:moving?Math.min(TILE*1.5,8+difficulty()*8):0,
     speed:moving?rand(.7,1.05):0,tiles,side,
-    active:true,fadeStartedAt:null
+    active:true,departedAt:null
   };
   platforms.push(p);
   return p;
@@ -54,7 +54,7 @@ function reset(seed=Math.floor(Math.random()*2**31)){
   const starter={
     id:0,x:0,y:580,w:width,h:12,type:'static',tiles,side:'left',
     active:true,starter:true,baseX:0,phase:0,amplitude:0,speed:0,
-    fadeStartedAt:null
+    departedAt:null
   };
   platforms.push(starter);
 
@@ -130,10 +130,23 @@ function update(dt){
     }
   }
 
-  // Previous platforms remain as safety nets for exactly two seconds.
+  // A tile gets a one-time three-second grace period starting when
+  // the player first bounces away from it. Returning to it never resets
+  // that original departure timestamp.
   for(const p of platforms){
-    if(p.fadeStartedAt!==null&&state.time-p.fadeStartedAt>=2){
+    if(p.departedAt!==null&&state.time-p.departedAt>=3){
       p.active=false;
+    }
+  }
+
+  const current=platforms.find(p=>p.id===state.currentPlatformId);
+  if(current&&current.departedAt===null){
+    const leftHorizontally =
+      player.x+R<current.x ||
+      player.x-R>current.x+current.w;
+    const leftVertically = player.y+R<current.y-2;
+    if(leftHorizontally||leftVertically){
+      current.departedAt=state.time;
     }
   }
 
@@ -154,8 +167,9 @@ function update(dt){
 
       if(different){
         const previous=platforms.find(platform=>platform.id===state.currentPlatformId);
-        if(previous)previous.fadeStartedAt=state.time;
-        p.fadeStartedAt=null;
+        if(previous&&previous.departedAt===null){
+          previous.departedAt=state.time;
+        }
         state.currentPlatformId=p.id;
       }
 
@@ -193,8 +207,8 @@ function drawPlatform(p){
   if(!p.active||y<-30||y>H+30)return;
 
   let alpha=1;
-  if(p.fadeStartedAt!==null){
-    alpha=Math.max(0,1-(state.time-p.fadeStartedAt)/2);
+  if(p.departedAt!==null){
+    alpha=Math.max(0,1-(state.time-p.departedAt)/3);
   }
 
   ctx.globalAlpha=alpha;
