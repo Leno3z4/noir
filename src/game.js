@@ -10,27 +10,49 @@ el.best.textContent=String(state.best);
 function rng(seed){let s=seed>>>0;return()=>{s+=0x6D2B79F5;let t=s;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
 function rand(a,b){return a+(b-a)*state.rng()}
 function difficulty(){return Math.min(1,state.score/4500)}
-function nextTileCount(row){
-  const d=difficulty();
-  if(row===0)return 1;
-  const maxTiles=Math.max(3,7-Math.floor(d*3));
-  const minTiles=Math.max(2,maxTiles-2);
-  return Math.floor(rand(minTiles,maxTiles+1));
+function profileAt(height){
+  if(height<500)return {minW:90,maxW:180,minGap:86,maxGap:102,moving:0};
+  if(height<1500)return {minW:72,maxW:150,minGap:88,maxGap:108,moving:.05};
+  if(height<3000)return {minW:58,maxW:126,minGap:92,maxGap:114,moving:.18};
+  return {minW:48,maxW:108,minGap:94,maxGap:118,moving:.3};
+}
+function wrappedDistance(a,b){
+  const direct=Math.abs(a-b);
+  return Math.min(direct,W-direct);
+}
+function reachable(prev,next){
+  const gap=Math.abs(prev.y-next.y);
+  const t=(-JUMP+Math.sqrt(JUMP*JUMP+2*GRAVITY*gap))/GRAVITY;
+  const maxTravel=190*1.35*t+prev.w*.5;
+  return wrappedDistance(prev.x+prev.w/2,next.x+next.w/2)<=maxTravel;
 }
 function addAbove(prev,n){
-  const row=n+1;
-  const tiles=nextTileCount(row);
-  const w=tiles*TILE;
-  const side=row%2===1?'right':'left';
-  const x=side==='left'?0:W-w;
-  const moving=state.score>900 && row%5===0;
-  const p={
-    x,y:prev.y-ROW_GAP,w,h:12,type:moving?'moving':'static',
-    seed:n,baseX:x,phase:rand(0,Math.PI*2),
-    amplitude:moving?Math.min(TILE*1.5,8+difficulty()*8):0,
-    speed:moving?rand(.7,1.05):0,tiles,side
+  const row=n+1,p=profileAt(Math.max(0,state.score));
+  const w=Math.round(rand(p.minW,p.maxW));
+  const y=prev.y-rand(p.minGap,p.maxGap);
+  const candidates=[
+    Math.max(0,Math.min(W-w,prev.x+rand(-115,115))),
+    rand(0,W-w),
+    row%2===1?W-w:0,
+    0,W-w
+  ];
+  for(const x of [...new Set(candidates.map(v=>Math.round(v)))]) {
+    const moving=rand(0,1)<p.moving;
+    const candidate={
+      x,y,w,h:12,type:moving?'moving':'static',seed:n,baseX:x,
+      phase:rand(0,Math.PI*2),
+      amplitude:moving?Math.min(TILE*1.5,8+difficulty()*8):0,
+      speed:moving?rand(.7,1.05):0,tiles:Math.max(1,Math.round(w/TILE)),
+      side:x===0?'left':x===W-w?'right':'mid'
+    };
+    if(reachable(prev,candidate)){platforms.push(candidate);return candidate}
+  }
+  const x=Math.max(0,Math.min(W-w,prev.x+rand(-60,60)));
+  const fallback={
+    x:Math.round(x),y,w,h:12,type:'static',seed:n,baseX:Math.round(x),
+    phase:rand(0,Math.PI*2),amplitude:0,speed:0,tiles:Math.max(1,Math.round(w/TILE)),side:'mid'
   };
-  platforms.push(p);return p;
+  platforms.push(fallback);return fallback;
 }
 function reset(seed=Math.floor(Math.random()*2**31)){
   state.running=true;state.time=0;state.cameraY=0;state.score=0;state.charge=0;state.flash=0;state.seed=seed;state.rng=rng(seed);
@@ -62,7 +84,10 @@ function update(dt){
     if(above&&cross&&inside){player.y=p.y-R;player.vy=JUMP*(1+Math.min(.12,state.score/50000));state.flash=.32;break}
   }
   const target=player.y-H*.34;if(target<state.cameraY)state.cameraY+=(target-state.cameraY)*Math.min(1,dt*5.5);
-  state.score=Math.max(state.score,Math.floor((520-player.y+state.cameraY)*.75));ensure();cleanup();
+  state.score=Math.max(state.score,Math.floor((520-player.y+state.cameraY)*.75));
+  ensure();cleanup();
+  el.height.textContent=String(Math.max(0,state.score));
+  el.speed.textContent=mult.toFixed(2)+'x';
   if(player.y>state.cameraY+H+70)endRun();
   el.height.textContent=String(Math.max(0,state.score));el.speed.textContent=mult.toFixed(2)+'x';
 }
