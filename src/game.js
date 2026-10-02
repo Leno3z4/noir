@@ -2,7 +2,7 @@ const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 const W=canvas.width,H=canvas.height,GRAVITY=1450,JUMP=-560,R=13,TILE=30,ROW_GAP=104;
 const el={menu:document.querySelector('#menu'),over:document.querySelector('#game-over'),start:document.querySelector('#start'),restart:document.querySelector('#restart'),height:document.querySelector('#height'),best:document.querySelector('#best'),speed:document.querySelector('#speed'),final:document.querySelector('#final-height'),newBest:document.querySelector('#new-best'),seed:document.querySelector('#seed')};
-const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0,launchTimer:0};
+const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0,launchTimer:0,currentPlatformId:0};
 const input={left:false,right:false},platforms=[];
 const player={x:W/2,y:520,vx:0,vy:0,lastY:520};
 el.best.textContent=String(state.best);
@@ -11,14 +11,12 @@ function rng(seed){let s=seed>>>0;return()=>{s+=0x6D2B79F5;let t=s;t=Math.imul(t
 function rand(a,b){return a+(b-a)*state.rng()}
 function difficulty(){return Math.min(1,state.score/4500)}
 function profileAt(height){
-  if(height<500)return {minTiles:4,maxTiles:6,minGap:84,maxGap:96,moving:0};
-  if(height<1500)return {minTiles:3,maxTiles:5,minGap:86,maxGap:98,moving:.05};
-  if(height<3000)return {minTiles:2,maxTiles:4,minGap:88,maxGap:100,moving:.18};
-  return {minTiles:2,maxTiles:4,minGap:90,maxGap:100,moving:.3};
+  if(height<500)return {minTiles:4,maxTiles:4,minGap:92,maxGap:98,moving:0};
+  if(height<1500)return {minTiles:4,maxTiles:5,minGap:92,maxGap:100,moving:.05};
+  if(height<3000)return {minTiles:3,maxTiles:4,minGap:94,maxGap:102,moving:.18};
+  return {minTiles:2,maxTiles:4,minGap:96,maxGap:106,moving:.3};
 }
-function snapped(value){
-  return Math.round(value/TILE)*TILE;
-}
+function snapped(value){return Math.round(value/TILE)*TILE}
 function wrappedDistance(a,b){
   const direct=Math.abs(a-b);
   return Math.min(direct,W-direct);
@@ -31,7 +29,7 @@ function reachable(prev,next){
   const maxTravel=190*1.35*descendingTime+prev.w*.5;
   return wrappedDistance(prev.x+prev.w/2,next.x+next.w/2)<=maxTravel;
 }
-function makePlatform(x,y,tiles,type,id){
+function makePlatform(x,y,tiles,type,id,starter=false){
   const w=tiles*TILE;
   const safeX=Math.max(0,Math.min(W-w,x));
   return {
@@ -40,66 +38,74 @@ function makePlatform(x,y,tiles,type,id){
     amplitude:type==='moving'?Math.min(TILE*1.5,8+difficulty()*8):0,
     speed:type==='moving'?rand(.7,1.05):0,
     tiles,side:safeX===0?'left':safeX===W-w?'right':'mid',
-    active:true
+    active:true,starter
   };
 }
 function addAbove(prev,n){
   const row=n+1,p=profileAt(Math.max(0,state.score));
   const tiles=Math.floor(rand(p.minTiles,p.maxTiles+1));
   const w=tiles*TILE;
-  const localX=snapped(prev.x+rand(-4,4)*TILE);
-  const wrapX=prev.x<W/2?W-w:0;
-  const edgeX=row%2===1?W-w:0;
-  const candidates=[localX,rand(0,W-w),wrapX,edgeX,0,W-w]
-    .map(v=>Math.max(0,Math.min(W-w,snapped(v))));
-  const unique=[...new Set(candidates)];
+  const gap=rand(p.minGap,p.maxGap);
+  const y=prev.y-gap;
 
-  for(const x of unique){
-    const type=rand(0,1)<p.moving?'moving':'static';
-    const candidate=makePlatform(x,prev.y-rand(p.minGap,p.maxGap),tiles,type,n);
-    if(reachable(prev,candidate)){
-      platforms.push(candidate);
-      return candidate;
-    }
+  // Early climb follows the deliberate left/right tile rhythm.
+  let x;
+  if(state.score<500){
+    const side=row%2===1?'right':'left';
+    x=side==='left'?0:W-w;
+  }else{
+    const side=state.rng()<.65?(row%2===1?'right':'left'):(rand(0,1)<.5?'left':'right');
+    const inset=Math.round(rand(0,Math.max(0,W-w))*0.22);
+    x=side==='left'?inset:(W-w)-inset;
   }
 
-  // Reachability-safe fallback: use the previous platform's lane and the
-  // smallest profile gap so a failed candidate never creates a dead route.
-  const fallbackTiles=Math.max(2,Math.min(tiles,p.minTiles));
-  const fallbackW=fallbackTiles*TILE;
-  const fallbackX=Math.max(0,Math.min(W-fallbackW,snapped(prev.x)));
-  const fallback=makePlatform(
-    fallbackX,
-    prev.y-p.minGap,
-    fallbackTiles,
-    'static',
-    n
-  );
-  platforms.push(fallback);
-  return fallback;
+  const type=rand(0,1)<p.moving?'moving':'static';
+  let candidate=makePlatform(x,y,tiles,type,n);
+
+  if(!reachable(prev,candidate)){
+    const fallbackX=prev.x<=W/2?Math.max(0,W-w-30):0;
+    candidate=makePlatform(fallbackX,y,tiles,'static',n);
+  }
+
+  platforms.push(candidate);
+  return candidate;
+}
+function seedIntroRoute(){
+  // Five-tile starter followed by four-tile wall-anchored platforms.
+  // The route intentionally alternates left/right like the supplied reference.
+  const route=[
+    {x:0,tiles:4,y:H-35},
+    {x:W-4*TILE,tiles:4,y:H-130},
+    {x:0,tiles:4,y:H-226},
+    {x:W-4*TILE,tiles:4,y:H-322},
+    {x:0,tiles:4,y:H-418},
+    {x:W-4*TILE,tiles:4,y:H-514},
+    {x:0,tiles:4,y:H-610}
+  ];
+
+  for(let i=0;i<route.length;i++){
+    const r=route[i];
+    const p=makePlatform(r.x,r.y,r.tiles,'static',i,i===0);
+    platforms.push(p);
+  }
 }
 function reset(seed=Math.floor(Math.random()*2**31)){
   state.running=true;state.time=0;state.cameraY=0;state.score=0;state.charge=0;
-  state.flash=0;state.seed=seed;state.rng=rng(seed);state.launchTimer=.4;
+  state.flash=0;state.seed=seed;state.rng=rng(seed);state.launchTimer=.9;
+  state.currentPlatformId=0;
 
   platforms.length=0;
-  const starterTiles=5;
-  const starterW=starterTiles*TILE;
-  const starterX=(W-starterW)/2;
-  const starter={
-    x:starterX,y:580,w:starterW,h:12,type:'static',seed:0,baseX:starterX,
-    phase:0,amplitude:0,speed:0,tiles:starterTiles,side:'mid',active:true,starter:true
-  };
-  platforms.push(starter);
+  seedIntroRoute();
 
+  const starter=platforms[0];
   player.x=starter.x+starter.w/2;
   player.y=starter.y-R;
   player.vx=0;
   player.vy=0;
   player.lastY=player.y;
 
-  let p=starter;
-  for(let i=1;i<=18;i++)p=addAbove(p,i);
+  let previous=platforms[platforms.length-1];
+  for(let i=7;i<=20;i++) previous=addAbove(previous,i);
 
   el.menu.classList.add('hidden');
   el.over.classList.add('hidden');
@@ -120,7 +126,6 @@ function update(dt){
   if(state.launchTimer>0){
     state.launchTimer=Math.max(0,state.launchTimer-dt);
     if(state.launchTimer===0){
-      // The starter tile is consumed as soon as the first bounce begins.
       const starter=platforms.find(p=>p.starter);
       if(starter)starter.active=false;
       player.vy=JUMP;
@@ -155,19 +160,17 @@ function update(dt){
     }
   }
 
-  markPassedPlatforms();
 
   if(player.vy>0)for(const p of platforms){
-    if(!p.active)continue;
+    if(!p.active||p.id!==state.currentPlatformId+1)continue;
     const above=player.lastY+R<=p.y+2;
     const cross=player.y+R>=p.y;
     const inside=player.x+R*.72>=p.x&&player.x-R*.72<=p.x+p.w;
     if(above&&cross&&inside){
       player.y=p.y-R;
       player.vy=JUMP*(1+Math.min(.12,state.score/50000));
-      // Route tiles are single-use: once you bounce from this tile,
-      // falling back to it later cannot rescue the run.
       p.active=false;
+      state.currentPlatformId=p.id;
       state.flash=.32;
       break;
     }
