@@ -1,0 +1,20 @@
+:root{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:#080808}
+body{display:grid;place-items:center;min-height:100vh;overflow:hidden}
+#game-shell{position:relative;width:min(100vw,420px);height:min(100vh,747px);display:grid;place-items:center}
+canvas{width:100%;height:100%;max-width:420px;max-height:747px;background:#080808;image-rendering:pixelated;border:1px solid #202020;touch-action:none}
+#hud{position:absolute;top:12px;left:14px;right:14px;display:grid;grid-template-columns:1fr 1fr 1fr;pointer-events:none}
+#hud div{display:grid;gap:2px}.hud div:nth-child(2){text-align:center}
+#hud div:nth-child(2){text-align:center}#hud div:nth-child(3){text-align:right}
+#hud span{font-size:9px;color:#777}#hud b{font-size:15px;color:#f1f1f1}
+.overlay{position:absolute;inset:0;display:grid;place-items:center;padding:28px;background:rgba(8,8,8,.75);backdrop-filter:blur(3px)}
+.overlay.hidden{display:none}
+.card{width:min(100%,330px);border:1px solid #333;background:#0b0b0b;padding:28px;box-shadow:0 18px 50px rgba(0,0,0,.5)}
+.eyebrow{color:#777;font-size:9px;letter-spacing:.18em;margin-bottom:15px}
+h1,h2{margin:0 0 12px;line-height:.95;letter-spacing:-.05em}h1{font-size:42px}h2{font-size:60px}
+p{color:#bcbcbc;font-size:12px;line-height:1.6}
+button{width:100%;margin-top:14px;padding:13px 16px;border:1px solid #777;background:#fff;color:#080808;font:800 12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;cursor:pointer}
+button:hover{background:#ddd}.controls,.seed{margin-top:12px;color:#666;font-size:9px;line-height:1.5}
+#new-best{color:#b8ff36;font-weight:800;letter-spacing:.1em}
+.touch-zone{position:absolute;top:0;bottom:0;width:34%;z-index:3}@media(min-width:700px){.touch-zone{display:none}}#touch-left{left:0}#touch-right{right:0}
