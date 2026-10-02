@@ -1,421 +1,160 @@
-const canvas = document.querySelector('#game');
-const ctx = canvas.getContext('2d');
-ctx.imageSmoothingEnabled = false;
+const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d');
+ctx.imageSmoothingEnabled=false;
+const W=canvas.width,H=canvas.height,GRAVITY=1450,JUMP=-560,R=13,TILE=30,ROW_GAP=104;
+const el={menu:document.querySelector('#menu'),over:document.querySelector('#game-over'),start:document.querySelector('#start'),restart:document.querySelector('#restart'),height:document.querySelector('#height'),best:document.querySelector('#best'),speed:document.querySelector('#speed'),final:document.querySelector('#final-height'),newBest:document.querySelector('#new-best'),seed:document.querySelector('#seed')};
+const playerEl=document.querySelector('#player');
+const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0,launchTimer:0,currentPlatformId:0};
+const input={left:false,right:false},platforms=[];
+const player={x:W/2,y:520,vx:0,vy:0,lastY:520};
+el.best.textContent=String(state.best);
 
-const W = canvas.width;
-const H = canvas.height;
-
-const CONFIG = {
-  gravity: 1500,
-  bounce: -570,
-  playerSize: 28,
-  platformTile: 30,
-  platformTiles: 4,
-  platformGap: 108,
-  cameraTrigger: 220,
-  deathMargin: 90,
-};
-
-const ui = {
-  menu: document.querySelector('#menu'),
-  over: document.querySelector('#game-over'),
-  start: document.querySelector('#start'),
-  restart: document.querySelector('#restart'),
-  height: document.querySelector('#height'),
-  best: document.querySelector('#best'),
-  speed: document.querySelector('#speed'),
-  final: document.querySelector('#final-height'),
-  newBest: document.querySelector('#new-best'),
-  seed: document.querySelector('#seed'),
-};
-
-const input = { left: false, right: false };
-
-const player = {
-  x: 0,
-  y: 0,
-  previousY: 0,
-  vx: 0,
-  vy: 0,
-  visible: true,
-};
-
-const state = {
-  mode: 'menu',
-  time: 0,
-  cameraY: 0,
-  height: 0,
-  best: Number(localStorage.getItem('dlicom-best') || 0),
-  seed: 0,
-  routeIndex: 0,
-  nextId: 0,
-};
-
-const platforms = [];
-
-ui.best.textContent = String(state.best);
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
+function rng(seed){let s=seed>>>0;return()=>{s+=0x6D2B79F5;let t=s;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
+function rand(a,b){return a+(b-a)*state.rng()}
+function difficulty(){return Math.min(1,state.score/4500)}
+function nextTileCount(row){
+  const d=difficulty();
+  if(row===0)return 4;
+  if(row===1)return 4;
+  const maxTiles=Math.max(3,7-Math.floor(d*3));
+  const minTiles=Math.max(2,maxTiles-2);
+  return Math.floor(rand(minTiles,maxTiles+1));
 }
-
-function platform(id, x, y, tiles = CONFIG.platformTiles, starter = false) {
-  return {
-    id,
-    x,
-    y,
-    width: tiles * CONFIG.platformTile,
-    height: 12,
-    active: true,
-    starter,
+function addAbove(prev,n){
+  const row=n+1;
+  const tiles=nextTileCount(row);
+  const w=tiles*TILE;
+  const side=row%2===1?'right':'left';
+  const x=side==='left'?0:W-w;
+  const moving=state.score>900 && row%5===0;
+  const p={
+    x,y:prev.y-ROW_GAP,w,h:12,type:moving?'moving':'static',
+    seed:n,baseX:x,phase:rand(0,Math.PI*2),
+    amplitude:moving?Math.min(TILE*1.5,8+difficulty()*8):0,
+    speed:moving?rand(.7,1.05):0,tiles,side
   };
+  platforms.push(p);return p;
 }
+function reset(seed=Math.floor(Math.random()*2**31)){
+  state.running=true;state.time=0;state.cameraY=0;state.score=0;state.charge=0;state.flash=0;
+  state.seed=seed;state.rng=rng(seed);state.launchTimer=.85;state.currentPlatformId=0;
+  platforms.length=0;
 
-function reset(seed = Math.floor(Math.random() * 0x7fffffff)) {
-  state.mode = 'playing';
-  state.time = 0;
-  state.cameraY = 0;
-  state.height = 0;
-  state.seed = seed;
-  state.routeIndex = 0;
-  state.nextId = 0;
+  let p={
+    x:0,y:580,w:TILE*4,h:12,type:'static',seed:0,tiles:4,side:'left',
+    active:true,starter:true,baseX:0,phase:0,amplitude:0,speed:0
+  };
+  platforms.push(p);
 
-  platforms.length = 0;
+  player.x=p.x+p.w/2;
+  player.y=p.y-R;
+  player.vx=0;
+  player.vy=0;
+  player.lastY=player.y;
 
-  // The opening route is deliberately authored to match the supplied reference:
-  // bottom-left starter, then alternating right / left wall platforms.
-  const width = CONFIG.platformTiles * CONFIG.platformTile;
-  const left = 0;
-  const right = W - width;
-  const startY = H - 35;
-  const gap = CONFIG.platformGap;
+  for(let i=1;i<=16;i++)p=addAbove(p,i);
+  el.menu.classList.add('hidden');el.over.classList.add('hidden');
+}
+function ensure(){while(Math.min(...platforms.map(p=>p.y))>state.cameraY-900){const top=platforms.reduce((a,b)=>a.y<b.y?a:b);addAbove(top,top.seed+1);if(platforms.length>90)break}}
+function cleanup(){const cut=state.cameraY+H+120;for(let i=platforms.length-1;i>=0;i--)if(platforms[i].y>cut)platforms.splice(i,1)}
+function axis(){return(input.right?1:0)-(input.left?1:0)}
+function endRun(){
+  state.running=false;const nb=state.score>state.best;
+  if(nb){state.best=state.score;localStorage.setItem('dlicom-best',String(state.best))}
+  el.final.textContent=String(state.score)+'m';el.newBest.classList.toggle('hidden',!nb);el.seed.textContent='RUN SEED · '+state.seed;el.best.textContent=String(state.best);el.over.classList.remove('hidden');
+}
+function update(dt){
+  if(!state.running)return;
+  state.time+=dt;
+  state.flash=Math.max(0,state.flash-dt*3.5);
 
-  const opening = [
-    [left, startY],
-    [right, startY - gap],
-    [left, startY - gap * 2],
-    [right, startY - gap * 3],
-    [left, startY - gap * 4],
-    [right, startY - gap * 5],
-    [left, startY - gap * 6],
-  ];
-
-  for (let i = 0; i < opening.length; i += 1) {
-    platforms.push(platform(i, opening[i][0], opening[i][1], CONFIG.platformTiles, i === 0));
+  if(state.launchTimer>0){
+    state.launchTimer=Math.max(0,state.launchTimer-dt);
+    if(state.launchTimer===0){
+      const starter=platforms[0];
+      if(starter)starter.active=false;
+      player.vy=JUMP;
+    }
+    return;
   }
 
-  // Continue the route with the same structure until the real generator is added.
-  for (let i = opening.length; i < 28; i += 1) {
-    const previous = platforms[i - 1];
-    const side = i % 2 === 0 ? left : right;
-    platforms.push(
-      platform(
-        i,
-        side,
-        previous.y - gap,
-        CONFIG.platformTiles
-      )
-    );
-  }
-
-  state.nextId = platforms.length;
-  state.routeIndex = 0;
-
-  const starter = platforms[0];
-
-  // The character is explicitly placed on the starter platform.
-  player.x = starter.x + starter.width / 2;
-  player.y = starter.y - CONFIG.playerSize / 2;
-  player.previousY = player.y;
-  player.vx = 0;
-  player.vy = 0;
-  player.visible = true;
-
-  ui.menu.classList.add('hidden');
-  ui.over.classList.add('hidden');
-  ui.height.textContent = '0';
-  ui.speed.textContent = '1.00x';
-}
-
-function currentPlatform() {
-  return platforms[state.routeIndex];
-}
-
-function nextPlatform() {
-  return platforms[state.routeIndex + 1];
-}
-
-function horizontalDirection() {
-  return (input.right ? 1 : 0) - (input.left ? 1 : 0);
-}
-
-function bounceFromNextPlatform() {
-  const next = nextPlatform();
-  if (!next || !next.active) return false;
-
-  const playerHalf = CONFIG.playerSize / 2;
-  const wasAbove = player.previousY + playerHalf <= next.y + 2;
-  const crossed = player.y + playerHalf >= next.y;
-  const overlaps =
-    player.x + playerHalf > next.x &&
-    player.x - playerHalf < next.x + next.width;
-
-  if (!wasAbove || !crossed || !overlaps) return false;
-
-  player.y = next.y - playerHalf;
-  player.vy = CONFIG.bounce;
-
-  // Once we land on a tile, the previous tile is no longer a valid safety net.
-  const previous = currentPlatform();
-  previous.active = false;
-  state.routeIndex += 1;
-
-  state.height = Math.max(
-    state.height,
-    Math.floor((startWorldY() - next.y) / 0.92)
-  );
-
-  return true;
-}
-
-function startWorldY() {
-  return H - 35;
-}
-
-function update(dt) {
-  if (state.mode !== 'playing') return;
-
-  state.time += dt;
-
-  const direction = horizontalDirection();
-
-  if (direction !== 0) {
-    player.vx += direction * 950 * dt;
-  } else {
-    player.vx *= Math.max(0, 1 - 9 * dt);
-  }
-
-  player.vx = clamp(player.vx, -220, 220);
-
-  player.previousY = player.y;
-  player.vy += CONFIG.gravity * dt;
-  player.x += player.vx * dt;
-  player.y += player.vy * dt;
-
-  // Seamless horizontal wrap.
-  const half = CONFIG.playerSize / 2;
-  if (player.x < -half) player.x = W + half;
-  if (player.x > W + half) player.x = -half;
-
-  bounceFromNextPlatform();
-
-  // Camera follows upward progress.
-  const targetCamera = player.y - CONFIG.cameraTrigger;
-  if (targetCamera < state.cameraY) {
-    state.cameraY += (targetCamera - state.cameraY) * Math.min(1, dt * 7);
-  }
-
-  if (state.routeIndex > 0) {
-    const landed = currentPlatform();
-    state.height = Math.max(
-      state.height,
-      Math.floor((startWorldY() - landed.y) / 0.92)
-    );
-  }
-
-  ui.height.textContent = String(Math.max(0, state.height));
-  ui.speed.textContent = (1 + Math.min(0.35, Math.abs(player.vx) / 650)).toFixed(2) + 'x';
-
-  // Falling below the active viewport is an immediate loss. Old platforms
-  // are inactive, so falling backward cannot save the run.
-  if (player.y > state.cameraY + H + CONFIG.deathMargin) {
-    endRun();
-  }
-
-  // Keep enough authored route ahead of the camera.
-  const top = platforms[platforms.length - 1];
-  if (top && top.y - state.cameraY > -900) {
-    const side = top.id % 2 === 0 ? rightSideFor(top.width) : 0;
-    platforms.push(
-      platform(
-        state.nextId,
-        side,
-        top.y - CONFIG.platformGap,
-        CONFIG.platformTiles
-      )
-    );
-    state.nextId += 1;
-  }
-}
-
-function rightSideFor(width) {
-  return W - width;
-}
-
-function endRun() {
-  state.mode = 'gameover';
-
-  const score = Math.max(0, state.height);
-  const isNewBest = score > state.best;
-
-  if (isNewBest) {
-    state.best = score;
-    localStorage.setItem('dlicom-best', String(state.best));
-  }
-
-  ui.final.textContent = score + 'm';
-  ui.newBest.classList.toggle('hidden', !isNewBest);
-  ui.seed.textContent = 'RUN SEED · ' + state.seed;
-  ui.best.textContent = String(state.best);
-  ui.over.classList.remove('hidden');
-}
-
-function drawBackground() {
-  ctx.fillStyle = '#080808';
-  ctx.fillRect(0, 0, W, H);
-
-  const shift = (state.cameraY * 0.08) % H;
-
-  for (let i = 0; i < 26; i += 1) {
-    const x = (i * 137) % W;
-    const y = (i * 53 - shift + H * 2) % H;
-
-    ctx.fillStyle = i % 5 === 0 ? '#333333' : '#1b1b1b';
-    ctx.fillRect(x, y, i % 4 === 0 ? 3 : 2, i % 4 === 0 ? 3 : 2);
-  }
-}
-
-function drawPlatform(p) {
-  const screenY = Math.round(p.y - state.cameraY);
-
-  if (screenY < -30 || screenY > H + 30) return;
-
-  ctx.fillStyle = p.active ? '#f0f0f0' : '#8a8a8a';
-  ctx.fillRect(
-    Math.round(p.x),
-    screenY,
-    Math.round(p.width),
-    10
-  );
-
-  ctx.fillStyle = '#4a4a4a';
-  ctx.fillRect(
-    Math.round(p.x),
-    screenY + 10,
-    Math.round(p.width),
-    3
-  );
-
-  // Tile seams/motifs.
-  ctx.fillStyle = '#171717';
-
-  for (let i = 0; i < CONFIG.platformTiles; i += 1) {
-    const tileX = p.x + i * CONFIG.platformTile;
-    ctx.fillRect(Math.round(tileX + 5), screenY + 3, 4, 2);
-
-    if (i < CONFIG.platformTiles - 1) {
-      ctx.fillRect(
-        Math.round(tileX + CONFIG.platformTile - 2),
-        screenY,
-        2,
-        10
-      );
+  const a=axis(),moving=a!==0,same=a===0||Math.sign(player.vx||a)===a;
+  if(moving&&same)state.charge=Math.min(4,state.charge+dt);else state.charge=Math.max(0,state.charge-dt*1.8);
+  const mult=1+Math.min(.55,state.charge/7.25),maxSpeed=190*mult;
+  if(a)player.vx+=a*930*dt;else{const drag=Math.min(Math.abs(player.vx),1350*dt);player.vx-=Math.sign(player.vx)*drag}
+  player.vx=Math.max(-maxSpeed,Math.min(maxSpeed,player.vx));player.lastY=player.y;player.vy+=GRAVITY*dt;player.x+=player.vx*dt;player.y+=player.vy*dt;
+  if(player.x<-R)player.x=W+R;if(player.x>W+R)player.x=-R;
+  for(const p of platforms)if(p.type==='moving')p.x=p.baseX+Math.sin(state.time*p.speed+p.phase)*p.amplitude;
+  if(player.vy>0)for(const p of platforms){
+    if(!p.active||p.seed!==state.currentPlatformId+1)continue;
+    const above=player.lastY+R<=p.y+2;
+    const cross=player.y+R>=p.y;
+    const inside=player.x+R*.72>=p.x&&player.x-R*.72<=p.x+p.w;
+    if(above&&cross&&inside){
+      player.y=p.y-R;
+      player.vy=JUMP*(1+Math.min(.12,state.score/50000));
+      const previous=platforms.find(platform=>platform.seed===state.currentPlatformId);
+      if(previous)previous.active=false;
+      state.currentPlatformId=p.seed;
+      state.flash=.32;
+      break;
     }
   }
+  const target=player.y-H*.34;if(target<state.cameraY)state.cameraY+=(target-state.cameraY)*Math.min(1,dt*5.5);
+  state.score=Math.max(state.score,Math.floor((520-player.y+state.cameraY)*.75));ensure();cleanup();
+  if(player.y>state.cameraY+H+70)endRun();
+  el.height.textContent=String(Math.max(0,state.score));el.speed.textContent=mult.toFixed(2)+'x';
 }
-
-function drawPlayer() {
-  // This is deliberately large and drawn last so there is never ambiguity
-  // about where the playable character is during prototype testing.
-  const half = CONFIG.playerSize / 2;
-  const x = Math.round(player.x - half);
-  const y = Math.round(player.y - half - state.cameraY);
-
-  ctx.fillStyle = '#b8ff36';
-  ctx.fillRect(x, y, CONFIG.playerSize, CONFIG.playerSize);
-
-  ctx.fillStyle = '#080808';
-  ctx.fillRect(x + 6, y + 8, 5, 5);
-  ctx.fillRect(x + CONFIG.playerSize - 11, y + 8, 5, 5);
-  ctx.fillRect(x + 8, y + 20, CONFIG.playerSize - 16, 3);
-
-  // Small position marker beneath the character.
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(Math.round(player.x - 2), Math.round(player.y + half + 2 - state.cameraY), 4, 3);
+function bg(){
+  const progress=Math.min(1,state.score/3500),band=Math.floor(state.cameraY*-.12/180)%4;
+  ctx.fillStyle='#080808';ctx.fillRect(0,0,W,H);
+  for(let i=0;i<16;i++){const x=i*24+(band*9%18),h=55+(i*31+band*23)%120;ctx.fillStyle=i%3===0?'#111':'#0d0d0d';ctx.fillRect(x,H-h,14,h);if(progress>.35&&i%4===0){ctx.fillStyle='#1f1f1f';ctx.fillRect(x+4,H-h+14,4,4);ctx.fillRect(x+4,H-h+28,4,4)}}
+  const shift=state.cameraY*.08%640;for(let i=0;i<28;i++){const x=i*137%W,y=(i*53-shift+H*2)%H;ctx.fillStyle=i%5===0?'#333':'#1b1b1b';ctx.fillRect(x,y,i%4===0?3:2,i%4===0?3:2)}
 }
+function drawPlatform(p){
+  const y=p.y-state.cameraY;if(y<-30||y>H+30)return;
+  const platformColor=p.type==='moving'?'#b8ff36':'#f0f0f0';
+  ctx.fillStyle=platformColor;
+  ctx.fillRect(Math.round(p.x),Math.round(y),Math.round(p.w),10);
+  ctx.fillStyle='#4a4a4a';
+  ctx.fillRect(Math.round(p.x),Math.round(y+10),Math.round(p.w),3);
+  ctx.fillStyle='#171717';
+  for(let i=0;i<p.tiles;i++){
+    const tx=p.x+i*TILE;
+    ctx.fillRect(Math.round(tx+5),Math.round(y+3),4,2);
+    if(TILE>=24)ctx.fillRect(Math.round(tx+TILE-5),Math.round(y+3),2,2);
+  }
+}
+function mascot(){
+  const sx=Math.round(player.x),sy=Math.round(player.y-state.cameraY),sq=player.vy<0?.96:1.06,w=Math.round(30*sq),h=Math.round(30/sq),x=sx-Math.floor(w/2),y=Math.round(sy-h/2+Math.sin(state.time*14)*1.5);
+  ctx.fillStyle='#fff';
+  ctx.fillRect(x+4,y,w-8,h);
+  ctx.fillRect(x,y+5,w,h-10);
+  ctx.fillStyle='#080808';
+  ctx.fillRect(x+7,y+9,5,5);
+  ctx.fillRect(x+w-12,y+9,5,5);
+  ctx.fillRect(x+9,y+h-10,w-18,3);
+  ctx.fillStyle='#888';
+  ctx.fillRect(x+5,y+4,3,3);
+  ctx.fillRect(x+w-8,y+4,3,3);
 
-function draw() {
-  drawBackground();
-
-  for (const p of platforms) {
-    drawPlatform(p);
+  if(playerEl){
+    playerEl.style.left=(player.x/W*100)+'%';
+    playerEl.style.top=((player.y-state.cameraY)/H*100)+'%';
+    playerEl.style.display='block';
   }
 
-  drawPlayer();
-}
-
-function setKey(key, active) {
-  const value = key.toLowerCase();
-
-  if (value === 'a' || key === 'arrowleft') input.left = active;
-  if (value === 'd' || key === 'arrowright') input.right = active;
-}
-
-window.addEventListener('keydown', (event) => {
-  setKey(event.key, true);
-
-  if (['ArrowLeft', 'ArrowRight', ' '].includes(event.key)) {
-    event.preventDefault();
+  if(state.flash){
+    ctx.globalAlpha=state.flash;
+    ctx.fillStyle='#fff';
+    ctx.fillRect(x-5,y-5,w+10,h+10);
+    ctx.globalAlpha=1;
   }
-
-  if (event.key === 'Enter' && state.mode === 'gameover') {
-    reset();
-  }
-});
-
-window.addEventListener('keyup', (event) => {
-  setKey(event.key, false);
-});
-
-function bindTouch(selector, direction) {
-  const zone = document.querySelector(selector);
-
-  const press = (event) => {
-    event.preventDefault();
-    input[direction] = true;
-  };
-
-  const release = (event) => {
-    event.preventDefault();
-    input[direction] = false;
-  };
-
-  ['pointerdown', 'pointerenter'].forEach((type) => {
-    zone.addEventListener(type, press);
-  });
-
-  ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => {
-    zone.addEventListener(type, release);
-  });
 }
-
-bindTouch('#touch-left', 'left');
-bindTouch('#touch-right', 'right');
-
-ui.start.addEventListener('click', () => reset());
-ui.restart.addEventListener('click', () => reset());
-
-let lastTime = performance.now();
-
-function frame(now) {
-  const dt = Math.min(0.032, (now - lastTime) / 1000);
-  lastTime = now;
-
-  update(dt);
-  draw();
-
-  requestAnimationFrame(frame);
-}
-
-draw();
-requestAnimationFrame(frame);
+function draw(){bg();for(const p of platforms)drawPlatform(p);mascot()}
+function key(k,on){if(k==='ArrowLeft'||k.toLowerCase()==='a')input.left=on;if(k==='ArrowRight'||k.toLowerCase()==='d')input.right=on}
+addEventListener('keydown',e=>{key(e.key,true);if(['ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();if(e.key==='Enter'&&!state.running&&el.over.classList.contains('hidden')===false)reset()});
+addEventListener('keyup',e=>key(e.key,false));
+function touch(id,dir){const z=document.querySelector(id);const on=e=>{e.preventDefault();input[dir]=true},off=e=>{e.preventDefault();input[dir]=false};['pointerdown','pointerenter'].forEach(v=>z.addEventListener(v,on));['pointerup','pointercancel','pointerleave'].forEach(v=>z.addEventListener(v,off))}
+touch('#touch-left','left');touch('#touch-right','right');
+el.start.onclick=()=>reset();el.restart.onclick=()=>reset();
+let last=performance.now();function frame(now){const dt=Math.min(.032,(now-last)/1000);last=now;update(dt);draw();requestAnimationFrame(frame)}requestAnimationFrame(frame);
