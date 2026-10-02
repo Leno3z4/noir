@@ -2,7 +2,6 @@ const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 const W=canvas.width,H=canvas.height,GRAVITY=1450,JUMP=-560,R=13,TILE=30,ROW_GAP=104;
 const el={menu:document.querySelector('#menu'),over:document.querySelector('#game-over'),start:document.querySelector('#start'),restart:document.querySelector('#restart'),height:document.querySelector('#height'),best:document.querySelector('#best'),speed:document.querySelector('#speed'),final:document.querySelector('#final-height'),newBest:document.querySelector('#new-best'),seed:document.querySelector('#seed')};
-const playerEl=document.querySelector('#player');
 const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0,launchTimer:0,currentPlatformId:0};
 const input={left:false,right:false},platforms=[];
 const player={x:W/2,y:520,vx:0,vy:0,lastY:520};
@@ -35,24 +34,36 @@ function addAbove(prev,n){
   platforms.push(p);return p;
 }
 function reset(seed=Math.floor(Math.random()*2**31)){
-  state.running=true;state.time=0;state.cameraY=0;state.score=0;state.charge=0;state.flash=0;
-  state.seed=seed;state.rng=rng(seed);state.launchTimer=.85;state.currentPlatformId=0;
-  platforms.length=0;
+  state.running=true;state.time=0;state.cameraY=0;state.score=0;state.charge=0;
+  state.flash=0;state.seed=seed;state.rng=rng(seed);state.launchTimer=.7;state.currentPlatformId=0;
 
-  let p={
-    x:0,y:580,w:TILE*4,h:12,type:'static',seed:0,tiles:4,side:'left',
-    active:true,starter:true,baseX:0,phase:0,amplitude:0,speed:0
-  };
-  platforms.push(p);
-
-  player.x=p.x+p.w/2;
-  player.y=p.y-R;
+  player.x=0;
+  player.y=580-R;
   player.vx=0;
   player.vy=0;
   player.lastY=player.y;
+  platforms.length=0;
+
+  // Wide starter and opening route. The player begins on the left block,
+  // then alternates between the left and right sides.
+  const tiles=6;
+  const width=tiles*TILE;
+  let p={
+    x:0,y:580,w:width,h:12,type:'static',seed:0,tiles,
+    side:'left',active:true,starter:true,baseX:0,phase:0,amplitude:0,speed:0
+  };
+  platforms.push(p);
+
+  player.x=p.x+p.w*.5;
+  player.y=p.y-R;
+  player.lastY=player.y;
 
   for(let i=1;i<=16;i++)p=addAbove(p,i);
-  el.menu.classList.add('hidden');el.over.classList.add('hidden');
+
+  el.menu.classList.add('hidden');
+  el.over.classList.add('hidden');
+  el.height.textContent='0';
+  el.speed.textContent='1.00x';
 }
 function ensure(){while(Math.min(...platforms.map(p=>p.y))>state.cameraY-900){const top=platforms.reduce((a,b)=>a.y<b.y?a:b);addAbove(top,top.seed+1);if(platforms.length>90)break}}
 function cleanup(){const cut=state.cameraY+H+120;for(let i=platforms.length-1;i>=0;i--)if(platforms[i].y>cut)platforms.splice(i,1)}
@@ -136,12 +147,6 @@ function mascot(){
   ctx.fillStyle='#888';
   ctx.fillRect(x+5,y+4,3,3);
   ctx.fillRect(x+w-8,y+4,3,3);
-
-  if(playerEl){
-    playerEl.style.left=(player.x/W*100)+'%';
-    playerEl.style.top=((player.y-state.cameraY)/H*100)+'%';
-    playerEl.style.display='block';
-  }
 
   if(state.flash){
     ctx.globalAlpha=state.flash;
