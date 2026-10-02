@@ -111,15 +111,6 @@ function endRun(){
   if(nb){state.best=state.score;localStorage.setItem('dlicom-best',String(state.best))}
   el.final.textContent=String(state.score)+'m';el.newBest.classList.toggle('hidden',!nb);el.seed.textContent='RUN SEED · '+state.seed;el.best.textContent=String(state.best);el.over.classList.remove('hidden');
 }
-function markPassedPlatforms(){
-  // Once the jumper has fully risen above a platform, that platform is spent.
-  // Falling back onto a previous route tile is intentionally not allowed.
-  const passedBottom=player.y+R;
-  for(const p of platforms){
-    if(p.starter||!p.active)continue;
-    if(passedBottom<p.y-2)p.active=false;
-  }
-}
 function update(dt){
   if(!state.running)return;
 
@@ -128,7 +119,12 @@ function update(dt){
 
   if(state.launchTimer>0){
     state.launchTimer=Math.max(0,state.launchTimer-dt);
-    if(state.launchTimer===0)player.vy=JUMP;
+    if(state.launchTimer===0){
+      // The starter tile is consumed as soon as the first bounce begins.
+      const starter=platforms.find(p=>p.starter);
+      if(starter)starter.active=false;
+      player.vy=JUMP;
+    }
     return;
   }
 
@@ -169,6 +165,9 @@ function update(dt){
     if(above&&cross&&inside){
       player.y=p.y-R;
       player.vy=JUMP*(1+Math.min(.12,state.score/50000));
+      // Route tiles are single-use: once you bounce from this tile,
+      // falling back to it later cannot rescue the run.
+      p.active=false;
       state.flash=.32;
       break;
     }
