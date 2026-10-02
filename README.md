@@ -7,7 +7,10 @@ Pixel-art browser infinite jumper prototype for the DLICOM game jam.
 - Left/right steering with acceleration and friction
 - Horizontal screen wrap-around
 - Upward-only camera
-- Procedurally generated platforms
+- Procedurally generated, wall-anchored tile platforms
+- Platforms use equal vertical spacing and stay within jump reach
+- The run starts on a single tile at the left wall
+- Platforms alternate between the left and right walls as height increases
 - Platforms below the viewport are removed
 - Falling below the camera ends the run
 - Sustained movement increases maximum speed
