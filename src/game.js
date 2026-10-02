@@ -22,7 +22,9 @@ function wrappedDistance(a,b){
 }
 function reachable(prev,next){
   const gap=Math.abs(prev.y-next.y);
-  const t=(-JUMP+Math.sqrt(JUMP*JUMP+2*GRAVITY*gap))/GRAVITY;
+  const discriminant=JUMP*JUMP-2*GRAVITY*gap;
+  if(discriminant<0)return false;
+  const t=(-JUMP+Math.sqrt(discriminant))/GRAVITY;
   const maxTravel=190*1.35*t+prev.w*.5;
   return wrappedDistance(prev.x+prev.w/2,next.x+next.w/2)<=maxTravel;
 }
