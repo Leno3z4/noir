@@ -71,6 +71,21 @@ function reset(seed=Math.floor(Math.random()*2**31)){
   el.height.textContent='0';
   el.speed.textContent='1.00x';
 }
+function ensure(){
+  while(Math.min(...platforms.map(p=>p.y))>state.cameraY-900){
+    const top=platforms.reduce((a,b)=>a.y<b.y?a:b);
+    addAbove(top,top.id);
+    if(platforms.length>90)break;
+  }
+}
+function cleanup(){
+  const cut=state.cameraY+H+120;
+  for(let i=platforms.length-1;i>=0;i--){
+    const p=platforms[i];
+    if(p.id===state.currentPlatformId)continue;
+    if(p.y>cut)platforms.splice(i,1);
+  }
+}
 function endRun(){
   state.running=false;const nb=state.score>state.best;
   if(nb){state.best=state.score;localStorage.setItem('dlicom-best',String(state.best))}
