@@ -139,6 +139,7 @@ function update(dt){
       if(different){
         const previous=platforms.find(platform=>platform.id===state.currentPlatformId);
         if(previous)previous.fadeStartedAt=state.time;
+        p.fadeStartedAt=null;
         state.currentPlatformId=p.id;
       }
 
