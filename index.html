@@ -9,6 +9,7 @@
 <body>
   <main id="game-shell">
     <canvas id="game" width="360" height="640" aria-label="DLICOM Ascend game"></canvas>
+    <div id="player" aria-hidden="true"><i></i><i></i><b></b></div>
     <div id="hud">
       <div><span>HEIGHT</span><b id="height">0</b></div>
       <div><span>BEST</span><b id="best">0</b></div>
@@ -20,7 +21,7 @@
         <h1>DLICOM:<br><em>ASCEND</em></h1>
         <p>The mascot keeps bouncing. Steer. Wrap. Climb. Don't fall.</p>
         <button id="start">START RUN</button>
-        <div class="controls">A / D · ← / → · touch left/right · Enter restart</div>
+        <div class="controls">A / D · ← / → · touch left/right side</div>
       </div>
     </section>
     <section id="game-over" class="overlay hidden">
