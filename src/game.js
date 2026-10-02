@@ -2,7 +2,7 @@ const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 const W=canvas.width,H=canvas.height,GRAVITY=1450,JUMP=-560,R=13,TILE=30,ROW_GAP=104;
 const el={menu:document.querySelector('#menu'),over:document.querySelector('#game-over'),start:document.querySelector('#start'),restart:document.querySelector('#restart'),height:document.querySelector('#height'),best:document.querySelector('#best'),speed:document.querySelector('#speed'),final:document.querySelector('#final-height'),newBest:document.querySelector('#new-best'),seed:document.querySelector('#seed')};
-const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0};
+const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0,launchTimer:0};
 const input={left:false,right:false},platforms=[];
 const player={x:W/2,y:520,vx:0,vy:0,lastY:520};
 el.best.textContent=String(state.best);
@@ -11,10 +11,13 @@ function rng(seed){let s=seed>>>0;return()=>{s+=0x6D2B79F5;let t=s;t=Math.imul(t
 function rand(a,b){return a+(b-a)*state.rng()}
 function difficulty(){return Math.min(1,state.score/4500)}
 function profileAt(height){
-  if(height<500)return {minW:90,maxW:180,minGap:86,maxGap:102,moving:0};
-  if(height<1500)return {minW:72,maxW:150,minGap:88,maxGap:108,moving:.05};
-  if(height<3000)return {minW:58,maxW:126,minGap:92,maxGap:114,moving:.18};
-  return {minW:48,maxW:108,minGap:94,maxGap:118,moving:.3};
+  if(height<500)return {minTiles:4,maxTiles:6,minGap:84,maxGap:96,moving:0};
+  if(height<1500)return {minTiles:3,maxTiles:5,minGap:86,maxGap:98,moving:.05};
+  if(height<3000)return {minTiles:2,maxTiles:4,minGap:88,maxGap:100,moving:.18};
+  return {minTiles:2,maxTiles:4,minGap:90,maxGap:100,moving:.3};
+}
+function snapped(value){
+  return Math.round(value/TILE)*TILE;
 }
 function wrappedDistance(a,b){
   const direct=Math.abs(a-b);
@@ -24,74 +27,164 @@ function reachable(prev,next){
   const gap=Math.abs(prev.y-next.y);
   const discriminant=JUMP*JUMP-2*GRAVITY*gap;
   if(discriminant<0)return false;
-  const t=(-JUMP+Math.sqrt(discriminant))/GRAVITY;
-  const maxTravel=190*1.35*t+prev.w*.5;
+  const descendingTime=(-JUMP+Math.sqrt(discriminant))/GRAVITY;
+  const maxTravel=190*1.35*descendingTime+prev.w*.5;
   return wrappedDistance(prev.x+prev.w/2,next.x+next.w/2)<=maxTravel;
+}
+function makePlatform(x,y,tiles,type,id){
+  const w=tiles*TILE;
+  const safeX=Math.max(0,Math.min(W-w,x));
+  return {
+    x:snapped(safeX),y,w,h:12,type,seed:id,baseX:snapped(safeX),
+    phase:rand(0,Math.PI*2),
+    amplitude:type==='moving'?Math.min(TILE*1.5,8+difficulty()*8):0,
+    speed:type==='moving'?rand(.7,1.05):0,
+    tiles,side:safeX===0?'left':safeX===W-w?'right':'mid',
+    active:true
+  };
 }
 function addAbove(prev,n){
   const row=n+1,p=profileAt(Math.max(0,state.score));
-  const w=Math.round(rand(p.minW,p.maxW));
-  const y=prev.y-rand(p.minGap,p.maxGap);
-  const candidates=[
-    Math.max(0,Math.min(W-w,prev.x+rand(-115,115))),
-    rand(0,W-w),
-    row%2===1?W-w:0,
-    0,W-w
-  ];
-  for(const x of [...new Set(candidates.map(v=>Math.round(v)))]) {
-    const moving=rand(0,1)<p.moving;
-    const candidate={
-      x,y,w,h:12,type:moving?'moving':'static',seed:n,baseX:x,
-      phase:rand(0,Math.PI*2),
-      amplitude:moving?Math.min(TILE*1.5,8+difficulty()*8):0,
-      speed:moving?rand(.7,1.05):0,tiles:Math.max(1,Math.round(w/TILE)),
-      side:x===0?'left':x===W-w?'right':'mid'
-    };
-    if(reachable(prev,candidate)){platforms.push(candidate);return candidate}
+  const tiles=Math.floor(rand(p.minTiles,p.maxTiles+1));
+  const w=tiles*TILE;
+  const localX=snapped(prev.x+rand(-4,4)*TILE);
+  const wrapX=prev.x<W/2?W-w:0;
+  const edgeX=row%2===1?W-w:0;
+  const candidates=[localX,rand(0,W-w),wrapX,edgeX,0,W-w]
+    .map(v=>Math.max(0,Math.min(W-w,snapped(v))));
+  const unique=[...new Set(candidates)];
+
+  for(const x of unique){
+    const type=rand(0,1)<p.moving?'moving':'static';
+    const candidate=makePlatform(x,prev.y-rand(p.minGap,p.maxGap),tiles,type,n);
+    if(reachable(prev,candidate)){
+      platforms.push(candidate);
+      return candidate;
+    }
   }
-  const x=Math.max(0,Math.min(W-w,prev.x+rand(-60,60)));
-  const fallback={
-    x:Math.round(x),y,w,h:12,type:'static',seed:n,baseX:Math.round(x),
-    phase:rand(0,Math.PI*2),amplitude:0,speed:0,tiles:Math.max(1,Math.round(w/TILE)),side:'mid'
-  };
-  platforms.push(fallback);return fallback;
+
+  // Reachability-safe fallback: use the previous platform's lane and the
+  // smallest profile gap so a failed candidate never creates a dead route.
+  const fallbackTiles=Math.max(2,Math.min(tiles,p.minTiles));
+  const fallbackW=fallbackTiles*TILE;
+  const fallbackX=Math.max(0,Math.min(W-fallbackW,snapped(prev.x)));
+  const fallback=makePlatform(
+    fallbackX,
+    prev.y-p.minGap,
+    fallbackTiles,
+    'static',
+    n
+  );
+  platforms.push(fallback);
+  return fallback;
 }
 function reset(seed=Math.floor(Math.random()*2**31)){
-  state.running=true;state.time=0;state.cameraY=0;state.score=0;state.charge=0;state.flash=0;state.seed=seed;state.rng=rng(seed);
-  player.x=W/2;player.y=520;player.vx=0;player.vy=JUMP;player.lastY=player.y;platforms.length=0;
-  let p={x:0,y:580,w:TILE,h:12,type:'static',seed:0,tiles:1,side:'left'};platforms.push(p);
-  player.x=TILE/2;
-  for(let i=0;i<16;i++)p=addAbove(p,i);
-  el.menu.classList.add('hidden');el.over.classList.add('hidden');
+  state.running=true;state.time=0;state.cameraY=0;state.score=0;state.charge=0;
+  state.flash=0;state.seed=seed;state.rng=rng(seed);state.launchTimer=.4;
+
+  platforms.length=0;
+  const starterTiles=5;
+  const starterW=starterTiles*TILE;
+  const starterX=(W-starterW)/2;
+  const starter={
+    x:starterX,y:580,w:starterW,h:12,type:'static',seed:0,baseX:starterX,
+    phase:0,amplitude:0,speed:0,tiles:starterTiles,side:'mid',active:true,starter:true
+  };
+  platforms.push(starter);
+
+  player.x=starter.x+starter.w/2;
+  player.y=starter.y-R;
+  player.vx=0;
+  player.vy=0;
+  player.lastY=player.y;
+
+  let p=starter;
+  for(let i=1;i<=18;i++)p=addAbove(p,i);
+
+  el.menu.classList.add('hidden');
+  el.over.classList.add('hidden');
+  el.height.textContent='0';
+  el.speed.textContent='1.00x';
 }
-function ensure(){while(Math.min(...platforms.map(p=>p.y))>state.cameraY-900){const top=platforms.reduce((a,b)=>a.y<b.y?a:b);addAbove(top,top.seed+1);if(platforms.length>90)break}}
-function cleanup(){const cut=state.cameraY+H+120;for(let i=platforms.length-1;i>=0;i--)if(platforms[i].y>cut)platforms.splice(i,1)}
-function axis(){return(input.right?1:0)-(input.left?1:0)}
 function endRun(){
   state.running=false;const nb=state.score>state.best;
   if(nb){state.best=state.score;localStorage.setItem('dlicom-best',String(state.best))}
   el.final.textContent=String(state.score)+'m';el.newBest.classList.toggle('hidden',!nb);el.seed.textContent='RUN SEED · '+state.seed;el.best.textContent=String(state.best);el.over.classList.remove('hidden');
 }
-function update(dt){
-  if(!state.running)return;state.time+=dt;state.flash=Math.max(0,state.flash-dt*3.5);
-  const a=axis(),moving=a!==0,same=a===0||Math.sign(player.vx||a)===a;
-  if(moving&&same)state.charge=Math.min(4,state.charge+dt);else state.charge=Math.max(0,state.charge-dt*1.8);
-  const mult=1+Math.min(.55,state.charge/7.25),maxSpeed=190*mult;
-  if(a)player.vx+=a*930*dt;else{const drag=Math.min(Math.abs(player.vx),1350*dt);player.vx-=Math.sign(player.vx)*drag}
-  player.vx=Math.max(-maxSpeed,Math.min(maxSpeed,player.vx));player.lastY=player.y;player.vy+=GRAVITY*dt;player.x+=player.vx*dt;player.y+=player.vy*dt;
-  if(player.x<-R)player.x=W+R;if(player.x>W+R)player.x=-R;
-  for(const p of platforms)if(p.type==='moving')p.x=p.baseX+Math.sin(state.time*p.speed+p.phase)*p.amplitude;
-  if(player.vy>0)for(const p of platforms){
-    const above=player.lastY+R<=p.y+2,cross=player.y+R>=p.y,inside=player.x+R*.72>=p.x&&player.x-R*.72<=p.x+p.w;
-    if(above&&cross&&inside){player.y=p.y-R;player.vy=JUMP*(1+Math.min(.12,state.score/50000));state.flash=.32;break}
+function markPassedPlatforms(){
+  // Once the jumper has fully risen above a platform, that platform is spent.
+  // Falling back onto a previous route tile is intentionally not allowed.
+  const passedBottom=player.y+R;
+  for(const p of platforms){
+    if(p.starter||!p.active)continue;
+    if(passedBottom<p.y-2)p.active=false;
   }
-  const target=player.y-H*.34;if(target<state.cameraY)state.cameraY+=(target-state.cameraY)*Math.min(1,dt*5.5);
+}
+function update(dt){
+  if(!state.running)return;
+
+  state.time+=dt;
+  state.flash=Math.max(0,state.flash-dt*3.5);
+
+  if(state.launchTimer>0){
+    state.launchTimer=Math.max(0,state.launchTimer-dt);
+    if(state.launchTimer===0)player.vy=JUMP;
+    return;
+  }
+
+  const a=axis(),moving=a!==0,same=a===0||Math.sign(player.vx||a)===a;
+  if(moving&&same)state.charge=Math.min(4,state.charge+dt);
+  else state.charge=Math.max(0,state.charge-dt*1.8);
+
+  const mult=1+Math.min(.55,state.charge/7.25),maxSpeed=190*mult;
+  if(a)player.vx+=a*930*dt;
+  else{
+    const drag=Math.min(Math.abs(player.vx),1350*dt);
+    player.vx-=Math.sign(player.vx)*drag;
+  }
+
+  player.vx=Math.max(-maxSpeed,Math.min(maxSpeed,player.vx));
+  player.lastY=player.y;
+  player.vy+=GRAVITY*dt;
+  player.x+=player.vx*dt;
+  player.y+=player.vy*dt;
+
+  if(player.x<-R)player.x=W+R;
+  if(player.x>W+R)player.x=-R;
+
+  for(const p of platforms){
+    if(p.type==='moving'&&p.active){
+      p.x=p.baseX+Math.sin(state.time*p.speed+p.phase)*p.amplitude;
+      p.x=Math.max(0,Math.min(W-p.w,p.x));
+    }
+  }
+
+  markPassedPlatforms();
+
+  if(player.vy>0)for(const p of platforms){
+    if(!p.active)continue;
+    const above=player.lastY+R<=p.y+2;
+    const cross=player.y+R>=p.y;
+    const inside=player.x+R*.72>=p.x&&player.x-R*.72<=p.x+p.w;
+    if(above&&cross&&inside){
+      player.y=p.y-R;
+      player.vy=JUMP*(1+Math.min(.12,state.score/50000));
+      state.flash=.32;
+      break;
+    }
+  }
+
+  const target=player.y-H*.34;
+  if(target<state.cameraY)state.cameraY+=(target-state.cameraY)*Math.min(1,dt*5.5);
+
   state.score=Math.max(state.score,Math.floor((520-player.y+state.cameraY)*.75));
   ensure();cleanup();
+
   el.height.textContent=String(Math.max(0,state.score));
   el.speed.textContent=mult.toFixed(2)+'x';
+
   if(player.y>state.cameraY+H+70)endRun();
-  }
+}
 function bg(){
   const progress=Math.min(1,state.score/3500),band=Math.floor(state.cameraY*-.12/180)%4;
   ctx.fillStyle='#080808';ctx.fillRect(0,0,W,H);
@@ -99,7 +192,8 @@ function bg(){
   const shift=state.cameraY*.08%640;for(let i=0;i<28;i++){const x=i*137%W,y=(i*53-shift+H*2)%H;ctx.fillStyle=i%5===0?'#333':'#1b1b1b';ctx.fillRect(x,y,i%4===0?3:2,i%4===0?3:2)}
 }
 function drawPlatform(p){
-  const y=p.y-state.cameraY;if(y<-30||y>H+30)return;
+  const y=p.y-state.cameraY;
+  if(y<-30||y>H+30)return;
   const platformColor=p.type==='moving'?'#b8ff36':'#f0f0f0';
   ctx.fillStyle=platformColor;
   ctx.fillRect(Math.round(p.x),Math.round(y),Math.round(p.w),10);
