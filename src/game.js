@@ -1,6 +1,6 @@
 const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
-const W=canvas.width,H=canvas.height,GRAVITY=1450,JUMP=-560,R=13;
+const W=canvas.width,H=canvas.height,GRAVITY=1450,JUMP=-560,R=13,TILE=30,ROW_GAP=104;
 const el={menu:document.querySelector('#menu'),over:document.querySelector('#game-over'),start:document.querySelector('#start'),restart:document.querySelector('#restart'),height:document.querySelector('#height'),best:document.querySelector('#best'),speed:document.querySelector('#speed'),final:document.querySelector('#final-height'),newBest:document.querySelector('#new-best'),seed:document.querySelector('#seed')};
 const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0};
 const input={left:false,right:false},platforms=[];
@@ -10,18 +10,34 @@ el.best.textContent=String(state.best);
 function rng(seed){let s=seed>>>0;return()=>{s+=0x6D2B79F5;let t=s;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
 function rand(a,b){return a+(b-a)*state.rng()}
 function difficulty(){return Math.min(1,state.score/4500)}
+function nextTileCount(row){
+  const d=difficulty();
+  if(row===0)return 1;
+  const maxTiles=Math.max(3,7-Math.floor(d*3));
+  const minTiles=Math.max(2,maxTiles-2);
+  return Math.floor(rand(minTiles,maxTiles+1));
+}
 function addAbove(prev,n){
-  const d=difficulty(),gap=rand(78+d*10,118+d*36),w=rand(126-d*30,88-d*32+38),maxDx=125+d*20;
-  let x=prev.x+rand(-maxDx,maxDx);if(state.rng()>.65)x=rand(20,W-w-20);x=Math.max(-30,Math.min(W-w+30,x));
-  const moving=state.rng()<Math.max(0,(d-.25))*.45;
-  const p={x,y:prev.y-gap,w,h:12,type:moving?'moving':'static',seed:n,baseX:x,phase:rand(0,Math.PI*2),amplitude:moving?rand(18,46):0,speed:moving?rand(.7,1.2):0};
+  const row=n+1;
+  const tiles=nextTileCount(row);
+  const w=tiles*TILE;
+  const side=row%2===1?'right':'left';
+  const x=side==='left'?0:W-w;
+  const moving=state.score>900 && row%5===0;
+  const p={
+    x,y:prev.y-ROW_GAP,w,h:12,type:moving?'moving':'static',
+    seed:n,baseX:x,phase:rand(0,Math.PI*2),
+    amplitude:moving?Math.min(TILE*1.5,8+difficulty()*8):0,
+    speed:moving?rand(.7,1.05):0,tiles,side
+  };
   platforms.push(p);return p;
 }
 function reset(seed=Math.floor(Math.random()*2**31)){
   state.running=true;state.time=0;state.cameraY=0;state.score=0;state.charge=0;state.flash=0;state.seed=seed;state.rng=rng(seed);
   player.x=W/2;player.y=520;player.vx=0;player.vy=JUMP;player.lastY=player.y;platforms.length=0;
-  let p={x:118,y:580,w:124,h:12,type:'static',seed:1};platforms.push(p);
-  for(let i=0;i<14;i++)p=addAbove(p,i);
+  let p={x:0,y:580,w:TILE,h:12,type:'static',seed:0,tiles:1,side:'left'};platforms.push(p);
+  player.x=TILE/2;
+  for(let i=0;i<16;i++)p=addAbove(p,i);
   el.menu.classList.add('hidden');el.over.classList.add('hidden');
 }
 function ensure(){while(Math.min(...platforms.map(p=>p.y))>state.cameraY-900){const top=platforms.reduce((a,b)=>a.y<b.y?a:b);addAbove(top,top.seed+1);if(platforms.length>90)break}}
@@ -58,9 +74,17 @@ function bg(){
 }
 function drawPlatform(p){
   const y=p.y-state.cameraY;if(y<-30||y>H+30)return;
-  ctx.fillStyle=p.type==='moving'?'#b8ff36':'#f0f0f0';ctx.fillRect(Math.round(p.x),Math.round(y),Math.round(p.w),10);
-  ctx.fillStyle='#4a4a4a';ctx.fillRect(Math.round(p.x),Math.round(y+10),Math.round(p.w),3);
-  ctx.fillStyle='#171717';for(let x=p.x+6;x<p.x+p.w-3;x+=13)ctx.fillRect(Math.round(x),Math.round(y+3),4,2);
+  const platformColor=p.type==='moving'?'#b8ff36':'#f0f0f0';
+  ctx.fillStyle=platformColor;
+  ctx.fillRect(Math.round(p.x),Math.round(y),Math.round(p.w),10);
+  ctx.fillStyle='#4a4a4a';
+  ctx.fillRect(Math.round(p.x),Math.round(y+10),Math.round(p.w),3);
+  ctx.fillStyle='#171717';
+  for(let i=0;i<p.tiles;i++){
+    const tx=p.x+i*TILE;
+    ctx.fillRect(Math.round(tx+5),Math.round(y+3),4,2);
+    if(TILE>=24)ctx.fillRect(Math.round(tx+TILE-5),Math.round(y+3),2,2);
+  }
 }
 function mascot(){
   const sx=Math.round(player.x),sy=Math.round(player.y-state.cameraY),sq=player.vy<0?.96:1.06,w=Math.round(30*sq),h=Math.round(30/sq),x=sx-Math.floor(w/2),y=Math.round(sy-h/2+Math.sin(state.time*14)*1.5);
