@@ -71,22 +71,24 @@ function addAbove(prev,n){
   return candidate;
 }
 function seedIntroRoute(){
-  // Five-tile starter followed by four-tile wall-anchored platforms.
-  // The route intentionally alternates left/right like the supplied reference.
+  const gap=96;
+  const tiles=4;
+  const width=tiles*TILE;
+
+  // Starter is always the bottom-left tile block.
   const route=[
-    {x:0,tiles:4,y:H-35},
-    {x:W-4*TILE,tiles:4,y:H-130},
-    {x:0,tiles:4,y:H-226},
-    {x:W-4*TILE,tiles:4,y:H-322},
-    {x:0,tiles:4,y:H-418},
-    {x:W-4*TILE,tiles:4,y:H-514},
-    {x:0,tiles:4,y:H-610}
+    {x:0,y:H-35},
+    {x:W-width,y:H-35-gap},
+    {x:0,y:H-35-gap*2},
+    {x:W-width,y:H-35-gap*3},
+    {x:0,y:H-35-gap*4},
+    {x:W-width,y:H-35-gap*5},
+    {x:0,y:H-35-gap*6}
   ];
 
   for(let i=0;i<route.length;i++){
     const r=route[i];
-    const p=makePlatform(r.x,r.y,r.tiles,'static',i,i===0);
-    platforms.push(p);
+    platforms.push(makePlatform(r.x,r.y,tiles,'static',i,i===0));
   }
 }
 function reset(seed=Math.floor(Math.random()*2**31)){
@@ -209,13 +211,41 @@ function drawPlatform(p){
   }
 }
 function mascot(){
-  const sx=Math.round(player.x),sy=Math.round(player.y-state.cameraY),sq=player.vy<0?.96:1.06,w=Math.round(30*sq),h=Math.round(30/sq),x=sx-Math.floor(w/2),y=Math.round(sy-h/2+Math.sin(state.time*14)*1.5);
-  ctx.fillStyle='#fff';ctx.fillRect(x+4,y,w-8,h);ctx.fillRect(x,y+5,w,h-10);
-  ctx.fillStyle='#080808';ctx.fillRect(x+7,y+9,5,5);ctx.fillRect(x+w-12,y+9,5,5);ctx.fillRect(x+9,y+h-10,w-18,3);
-  ctx.fillStyle='#888';ctx.fillRect(x+5,y+4,3,3);ctx.fillRect(x+w-8,y+4,3,3);
-  if(state.flash){ctx.globalAlpha=state.flash;ctx.fillStyle='#fff';ctx.fillRect(x-5,y-5,w+10,h+10);ctx.globalAlpha=1}
+  const sx=Math.round(player.x);
+  const sy=Math.round(player.y-state.cameraY);
+  const rising=player.vy<0;
+  const squash=rising?.92:1.08;
+  const w=Math.round(34*squash);
+  const h=Math.round(34/squash);
+  const x=sx-Math.floor(w/2);
+  const y=Math.round(sy-h/2);
+
+  // Bright prototype marker so the gameplay object is impossible to miss.
+  ctx.fillStyle='#b8ff36';
+  ctx.fillRect(x,y,w,h);
+  ctx.fillStyle='#080808';
+  ctx.fillRect(x+7,y+9,6,6);
+  ctx.fillRect(x+w-13,y+9,6,6);
+  ctx.fillRect(x+9,y+h-10,w-18,3);
+
+  if(state.launchTimer>0){
+    ctx.strokeStyle='#ffffff';
+    ctx.lineWidth=2;
+    ctx.strokeRect(x-4,y-4,w+8,h+8);
+  }
+
+  if(state.flash>0){
+    ctx.globalAlpha=Math.min(.55,state.flash);
+    ctx.fillStyle='#ffffff';
+    ctx.fillRect(x-6,y-6,w+12,h+12);
+    ctx.globalAlpha=1;
+  }
 }
-function draw(){bg();for(const p of platforms)drawPlatform(p);mascot()}
+function draw(){
+  bg();
+  for(const p of platforms)drawPlatform(p);
+  mascot();
+}
 function key(k,on){if(k==='ArrowLeft'||k.toLowerCase()==='a')input.left=on;if(k==='ArrowRight'||k.toLowerCase()==='d')input.right=on}
 addEventListener('keydown',e=>{key(e.key,true);if(['ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();if(e.key==='Enter'&&!state.running&&el.over.classList.contains('hidden')===false)reset()});
 addEventListener('keyup',e=>key(e.key,false));
