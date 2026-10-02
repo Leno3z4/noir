@@ -91,8 +91,7 @@ function update(dt){
   el.height.textContent=String(Math.max(0,state.score));
   el.speed.textContent=mult.toFixed(2)+'x';
   if(player.y>state.cameraY+H+70)endRun();
-  el.height.textContent=String(Math.max(0,state.score));el.speed.textContent=mult.toFixed(2)+'x';
-}
+  }
 function bg(){
   const progress=Math.min(1,state.score/3500),band=Math.floor(state.cameraY*-.12/180)%4;
   ctx.fillStyle='#080808';ctx.fillRect(0,0,W,H);
