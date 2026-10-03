@@ -13,8 +13,12 @@ function axis(){return(input.right?1:0)-(input.left?1:0)}
 function difficulty(){return Math.min(1,state.score/4500)}
 function nextTileCount(row){
   const d=difficulty();
-  if(row===0)return 4;
-  if(row===1)return 4;
+
+  // Keep the opening deliberately generous so the first opposite-wall
+  // platform is reachable on the very first bounce. Later rows tighten.
+  if(row<=2)return 7;
+  if(row<=6)return 6;
+
   const maxTiles=Math.max(3,7-Math.floor(d*3));
   const minTiles=Math.max(2,maxTiles-2);
   return Math.floor(rand(minTiles,maxTiles+1));
@@ -23,7 +27,9 @@ function addAbove(prev,n){
   const row=n+1;
   const tiles=nextTileCount(row);
   const w=tiles*TILE;
-  const side=row%2===1?'right':'left';
+  // Starter is on the left; the first generated target goes right,
+  // then the route alternates left/right from there.
+  const side=row%2===0?'right':'left';
   const x=side==='left'?0:W-w;
   const moving=state.score>900&&row%5===0;
   const p={
