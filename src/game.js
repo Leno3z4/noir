@@ -2,7 +2,7 @@ const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 const W=canvas.width,H=canvas.height,GRAVITY=1450,JUMP=-560,R=13,TILE=30,ROW_GAP=104;
 const el={menu:document.querySelector('#menu'),over:document.querySelector('#game-over'),start:document.querySelector('#start'),restart:document.querySelector('#restart'),height:document.querySelector('#height'),best:document.querySelector('#best'),jumps:document.querySelector('#jumps'),final:document.querySelector('#final-height'),newBest:document.querySelector('#new-best'),seed:document.querySelector('#seed')};
-const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0,currentPlatformId:0,jumps:0};
+const state={running:false,time:0,cameraY:0,score:0,best:Number(localStorage.getItem('dlicom-best')||0),seed:0,rng:null,charge:0,flash:0,currentPlatformId:0,jumps:0,launchTimer:0,launched:false};
 const input={left:false,right:false},platforms=[];
 const player={x:W/2,y:520,vx:0,vy:0,lastY:520};
 el.best.textContent=String(state.best);
@@ -48,6 +48,8 @@ function reset(seed=Math.floor(Math.random()*2**31)){
   state.rng=rng(seed);
   state.currentPlatformId=0;
   state.jumps=0;
+  state.launchTimer=.16;
+  state.launched=false;
 
   platforms.length=0;
 
@@ -63,7 +65,7 @@ function reset(seed=Math.floor(Math.random()*2**31)){
   player.x=starter.x+starter.w*.5;
   player.y=starter.y-R;
   player.vx=0;
-  player.vy=JUMP;
+  player.vy=0;
   player.lastY=player.y;
 
   let p=starter;
@@ -236,6 +238,23 @@ function update(dt){
 
   state.time+=dt;
   state.flash=Math.max(0,state.flash-dt*3.5);
+
+  // Give the player a clean visual start: the mascot is visibly planted on
+  // the first tile for a brief moment, then the automatic bounce begins.
+  if(!state.launched){
+    const starter=platforms.find(p=>p.id===0);
+    if(starter){
+      state.launchTimer=Math.max(0,state.launchTimer-dt);
+      player.x=starter.x+starter.w*.5;
+      player.y=starter.y-R;
+      player.vx=0;
+      player.vy=0;
+      player.lastY=player.y;
+    }
+    if(state.launchTimer>0)return;
+    state.launched=true;
+    player.vy=JUMP;
+  }
 
   const a=axis();
   const moving=a!==0;
@@ -554,7 +573,9 @@ function mascot(){
   const rising=player.vy<0;
 
   ctx.save();
-  ctx.translate(sx,Math.round(sy+bounce*.8));
+  // The collider is centered on player.y; the art is anchored by its
+  // bottom edge so the mascot visibly sits on top of the tile.
+  ctx.translate(sx,Math.round(sy-15+bounce*.8));
   ctx.scale(rising?.97:1.04,rising?1.04:.96);
 
   // Dlicom's canonical mascot cues: a glossy spherical glass helmet,
